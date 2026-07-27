@@ -762,10 +762,10 @@ importers:
         version: link:../../packages/shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(b08b66752532a52c0a8b7a6b9c974b22)
+        version: 2.0.0-beta.76(15b2305f6f5c8050c0121c7b73c97896)
       drizzle-orm:
         specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(c907441ce73b163f17d6db605ee03552)
+        version: 1.0.0-rc.5-ab785fc(10a7ed86271d2eb814bef3768f3e9939)
       effect:
         specifier: 4.0.0-rc.112
         version: 4.0.0-rc.112(patch_hash=200b70758a8f02f5a4e6a4abea5f0079ad36fe9c2006486ebaf6ab1002a38320)
@@ -782,9 +782,15 @@ importers:
       '@types/node':
         specifier: 24.12.4
         version: 24.12.4
+      '@types/pg':
+        specifier: ^8.16.0
+        version: 8.23.1
       drizzle-kit:
         specifier: 1.0.0-rc.5-ab785fc
         version: 1.0.0-rc.5-ab785fc
+      pg:
+        specifier: ^8.21.0
+        version: 8.23.0
       vite:
         specifier: npm:@voidzero-dev/vite-plus-core@0.3.0
         version: '@voidzero-dev/vite-plus-core@0.3.0(@types/node@24.12.4)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(typescript@7.0.2)(unrun@0.2.39)(yaml@2.9.0)'
@@ -5410,6 +5416,9 @@ packages:
 
   '@types/node@24.12.4':
     resolution: {integrity: sha512-GUUEShf+PBCGW2KaXwcIt3Yk+e3pkKwWKb9GSyM9WQVE+ep2jzmHdGsHzu4wgcZy5fN9FBdVzjpBQsYlpfpgLA==}
+
+  '@types/pg@8.23.1':
+    resolution: {integrity: sha512-fKVHpikPdg4GKks3JuLEhvwSyvwzF23hnabPy6DD8ljVbC7+6J5dQzdv4arV6jqq57djnMgs1HKBxX4P8aBI3A==}
 
   '@types/pngjs@6.0.5':
     resolution: {integrity: sha512-0k5eKfrA83JOZPppLtS2C7OUtyNAl2wKNxfyYl9Q5g9lPkgBl/9hNyAu6HuEH2J4XmIv2znEpkDd0SaZVxW6iQ==}
@@ -15918,6 +15927,12 @@ snapshots:
     dependencies:
       undici-types: 7.16.0
 
+  '@types/pg@8.23.1':
+    dependencies:
+      '@types/node': 24.12.4
+      pg-protocol: 1.16.0
+      pg-types: 2.2.0
+
   '@types/pngjs@6.0.5':
     dependencies:
       '@types/node': 24.12.4
@@ -16434,7 +16449,7 @@ snapshots:
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
-  alchemy@2.0.0-beta.76(b08b66752532a52c0a8b7a6b9c974b22):
+  alchemy@2.0.0-beta.76(15b2305f6f5c8050c0121c7b73c97896):
     dependencies:
       '@alchemy.run/cloudflare-runtime': 2.0.0-beta.76(@distilled.cloud/cloudflare@1.0.0-rc.8(effect@4.0.0-rc.112(patch_hash=200b70758a8f02f5a4e6a4abea5f0079ad36fe9c2006486ebaf6ab1002a38320)))(@effect/platform-bun@4.0.0-rc.112(bufferutil@4.1.0)(effect@4.0.0-rc.112(patch_hash=200b70758a8f02f5a4e6a4abea5f0079ad36fe9c2006486ebaf6ab1002a38320))(utf-8-validate@6.0.6))(@effect/platform-node@4.0.0-rc.112(bufferutil@4.1.0)(effect@4.0.0-rc.112(patch_hash=200b70758a8f02f5a4e6a4abea5f0079ad36fe9c2006486ebaf6ab1002a38320))(redis@6.2.1)(utf-8-validate@6.0.6))(@types/node@24.12.4)(@voidzero-dev/vite-plus-core@0.3.0(@types/node@24.12.4)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(typescript@7.0.2)(unrun@0.2.39)(yaml@2.9.0))(effect@4.0.0-rc.112(patch_hash=200b70758a8f02f5a4e6a4abea5f0079ad36fe9c2006486ebaf6ab1002a38320))(rolldown@1.2.5)(typescript@7.0.2)
       '@alchemy.run/floci': 2.0.0-beta.76(effect@4.0.0-rc.112(patch_hash=200b70758a8f02f5a4e6a4abea5f0079ad36fe9c2006486ebaf6ab1002a38320))
@@ -16480,7 +16495,7 @@ snapshots:
       '@effect/platform-node': 4.0.0-rc.112(bufferutil@4.1.0)(effect@4.0.0-rc.112(patch_hash=200b70758a8f02f5a4e6a4abea5f0079ad36fe9c2006486ebaf6ab1002a38320))(redis@6.2.1)(utf-8-validate@6.0.6)
       '@effect/sql-pg': 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=200b70758a8f02f5a4e6a4abea5f0079ad36fe9c2006486ebaf6ab1002a38320))
       drizzle-kit: 1.0.0-rc.5-ab785fc
-      drizzle-orm: 1.0.0-rc.5-ab785fc(c907441ce73b163f17d6db605ee03552)
+      drizzle-orm: 1.0.0-rc.5-ab785fc(10a7ed86271d2eb814bef3768f3e9939)
       mongodb: 6.21.0(@aws-sdk/credential-providers@3.1062.0)(socks@2.8.9)
       pg: 8.23.0
       vite: '@voidzero-dev/vite-plus-core@0.3.0(@types/node@24.12.4)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(typescript@7.0.2)(unrun@0.2.39)(yaml@2.9.0)'
@@ -17472,7 +17487,7 @@ snapshots:
       get-tsconfig: 4.14.3
       jiti: 2.7.0
 
-  drizzle-orm@1.0.0-rc.5-ab785fc(c907441ce73b163f17d6db605ee03552):
+  drizzle-orm@1.0.0-rc.5-ab785fc(10a7ed86271d2eb814bef3768f3e9939):
     optionalDependencies:
       '@cloudflare/workers-types': 4.20260604.1
       '@effect/sql-d1': 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=200b70758a8f02f5a4e6a4abea5f0079ad36fe9c2006486ebaf6ab1002a38320))
@@ -17481,6 +17496,7 @@ snapshots:
       '@effect/sql-sqlite-do': 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=200b70758a8f02f5a4e6a4abea5f0079ad36fe9c2006486ebaf6ab1002a38320))
       '@electric-sql/pglite': 0.3.15
       '@libsql/client': 0.17.3(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      '@types/pg': 8.23.1
       bun-types: 1.3.14
       effect: 4.0.0-rc.112(patch_hash=200b70758a8f02f5a4e6a4abea5f0079ad36fe9c2006486ebaf6ab1002a38320)
       expo-sqlite: 57.0.2(expo@57.0.18)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.2.16)(bufferutil@4.1.0)(react@19.2.6)(utf-8-validate@6.0.6))(react@19.2.6)
