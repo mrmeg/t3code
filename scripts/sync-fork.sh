@@ -57,4 +57,17 @@ echo "→ Pushing ${WORK_BRANCH} to fork..."
 git push --force-with-lease origin "$WORK_BRANCH"
 
 echo "✓ Done. main mirrors upstream, ${WORK_BRANCH} is rebased and pushed."
-echo "  Railway will redeploy from the updated ${WORK_BRANCH}."
+
+# The Railway devbox runs the published npm package (not this repo), so pull
+# its update alongside the fork sync. Non-fatal: the fork sync already succeeded.
+echo "→ Updating t3 on the Railway devbox..."
+if railway ssh \
+    --project 5e74fae8-5b59-4f41-b778-f140ec224646 \
+    --environment dd05b42d-9f69-4165-ac94-40311d2e70eb \
+    --service 0b64c47f-67e1-4362-9023-99171319c376 \
+    -- npm i -g t3@latest; then
+  echo "✓ Devbox t3 updated to latest."
+else
+  echo "⚠ Devbox update failed (offline or CLI not logged in?). Run manually:"
+  echo "  railway ssh -- npm i -g t3@latest"
+fi
