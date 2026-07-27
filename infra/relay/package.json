@@ -7,6 +7,7 @@
     "push:android:smoke": "node scripts/android-push-smoke.ts",
     "push:android:watch": "node scripts/android-push-watch.ts",
     "destroy": "alchemy destroy",
+    "migrate:railway": "node -- scripts/migrate-railway.ts",
     "test": "vp test run",
     "typecheck": "tsc --noEmit"
   },
@@ -27,7 +28,9 @@
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
     "@types/node": "catalog:",
+    "@types/pg": "^8.16.0",
     "drizzle-kit": "1.0.0-rc.5-ab785fc",
+    "pg": "^8.21.0",
     "vite": "catalog:",
     "vite-plus": "catalog:"
   }
