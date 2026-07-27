@@ -5,6 +5,7 @@
   "scripts": {
     "deploy": "node -- scripts/deploy.ts",
     "destroy": "alchemy destroy",
+    "migrate:railway": "node -- scripts/migrate-railway.ts",
     "test": "vp test run",
     "typecheck": "tsgo --noEmit"
   },
@@ -25,7 +26,9 @@
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
     "@types/node": "catalog:",
+    "@types/pg": "^8.16.0",
     "drizzle-kit": "1.0.0-rc.4",
+    "pg": "^8.21.0",
     "vite": "catalog:",
     "vite-plus": "catalog:"
   }
