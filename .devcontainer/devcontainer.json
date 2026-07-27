@@ -1,8 +1,7 @@
 {
   "name": "T3 Code Dev",
-  "image": "debian:bookworm",
+  "image": "mcr.microsoft.com/devcontainers/base:bookworm",
   "features": {
-    "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/devcontainers-extra/features/bun:1": {
       "version": "1.3.11"
     },
@@ -14,12 +13,8 @@
       "installTools": false
     }
   },
-  "overrideFeatureInstallOrder": [
-    "ghcr.io/devcontainers/features/git",
-    "ghcr.io/devcontainers-extra/features/bun"
-  ],
   "postCreateCommand": {
-    "bun-install": "bun install --backend=copyfile --frozen-lockfile"
+    "pnpm-install": "corepack enable && CI=true pnpm install --frozen-lockfile"
   },
   "customizations": {
     "vscode": {
