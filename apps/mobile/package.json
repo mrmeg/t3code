@@ -142,7 +142,8 @@
     "install": {
       "exclude": [
         "react-native-keyboard-controller",
-        "typescript"
+        "typescript",
+        "react-native-screens"
       ]
     },
     "autolinking": {
