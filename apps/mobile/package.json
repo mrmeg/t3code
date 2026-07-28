@@ -140,7 +140,8 @@
   "expo": {
     "install": {
       "exclude": [
-        "react-native-keyboard-controller"
+        "react-native-keyboard-controller",
+        "react-native-screens"
       ]
     },
     "autolinking": {
