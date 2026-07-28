@@ -14,6 +14,8 @@ const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
 const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
 const customBundleIdentifier = repoEnv.T3CODE_IOS_BUNDLE_ID?.trim();
 const customAppleTeamId = repoEnv.T3CODE_APPLE_TEAM_ID?.trim();
+const customExpoOwner = repoEnv.T3CODE_EXPO_OWNER?.trim();
+const customExpoProjectId = repoEnv.T3CODE_EXPO_PROJECT_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
@@ -374,11 +376,15 @@ const config: ExpoConfig = {
       tracesDataset: repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET ?? null,
       tracesToken: repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null,
     },
-    eas: {
-      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
-    },
+    ...(customExpoProjectId || !customExpoOwner
+      ? {
+          eas: {
+            projectId: customExpoProjectId ?? "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+          },
+        }
+      : {}),
   },
-  owner: "pingdotgg",
+  owner: customExpoOwner ?? "pingdotgg",
 };
 
 export default config;
