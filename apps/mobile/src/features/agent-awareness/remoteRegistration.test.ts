@@ -47,6 +47,7 @@ const secureStore = vi.hoisted(() => new Map<string, string>());
 const widgetMocks = vi.hoisted(() => ({
   getInstances: vi.fn(() => []),
   start: vi.fn(() => ({})),
+  updateSnapshot: vi.fn(),
 }));
 const environmentConfigsMock = vi.hoisted(() => ({
   configs: new Map<
@@ -88,6 +89,9 @@ vi.mock("../../widgets/AgentActivity", () => ({
   default: {
     getInstances: widgetMocks.getInstances,
     start: widgetMocks.start,
+  },
+  AgentActivityWidget: {
+    updateSnapshot: widgetMocks.updateSnapshot,
   },
 }));
 
@@ -252,6 +256,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     widgetMocks.getInstances.mockReturnValue([]);
     widgetMocks.start.mockClear();
     environmentConfigsMock.configs.clear();
+    widgetMocks.updateSnapshot.mockReset();
   });
 
   it("preserves disabled Live Activity preferences in relay registrations", () => {
@@ -545,11 +550,15 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     return Effect.gen(function* () {
       yield* runBackgroundOperations();
 
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-      const [request, init] = fetchMock.mock.calls[1] as unknown as [
-        unknown,
-        RequestInit | undefined,
-      ];
+      // The sign-in refresh also reads the agent-activity snapshot for the
+      // home-screen widget, so find the device registration by URL instead of
+      // relying on call ordering.
+      const deviceCall = fetchMock.mock.calls.find(([candidate]) => {
+        const candidateUrl = candidate instanceof Request ? candidate.url : String(candidate);
+        return candidateUrl === "https://relay.example.test/v1/mobile/devices";
+      });
+      expect(deviceCall).toBeDefined();
+      const [request, init] = deviceCall as unknown as [unknown, RequestInit | undefined];
       const url = request instanceof Request ? request.url : String(request);
       const method = request instanceof Request ? request.method : init?.method;
       const headers = request instanceof Request ? request.headers : new Headers(init?.headers);
@@ -782,8 +791,13 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       },
     };
 
+    // The sign-in refresh reads the agent-activity snapshot (for the
+    // home-screen widget) before the device registrations drain, consuming
+    // one token lookup; the second rejection is the one that hits the active
+    // device registration and must not wedge the queue.
     const tokenProvider = vi
       .fn<() => Promise<string | null>>()
+      .mockRejectedValueOnce(new Error("auth unavailable"))
       .mockRejectedValueOnce(new Error("auth unavailable"))
       .mockResolvedValue("clerk-token-user-a");
     setAgentAwarenessRelayTokenProvider(tokenProvider);
@@ -795,7 +809,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       yield* runBackgroundOperations();
 
       expect(backgroundRuntime.pending).toHaveLength(0);
-      expect(tokenProvider).toHaveBeenCalledTimes(2);
+      expect(tokenProvider).toHaveBeenCalledTimes(3);
     }).pipe(Effect.provide(relayTestLayer));
   });
 
