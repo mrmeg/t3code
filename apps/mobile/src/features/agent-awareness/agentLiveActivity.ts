@@ -10,3 +10,5 @@ export function startAgentLiveActivity(
 ): LiveActivity<AgentActivityProps> | null {
   return null;
 }
+
+export function updateAgentActivityWidgetSnapshot(_props: AgentActivityProps): void {}
