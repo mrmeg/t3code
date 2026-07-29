@@ -9,7 +9,70 @@
 set -euo pipefail
 
 WORK_BRANCH="mrmeg"
+APP_NAME="T3 Code (Alpha)"
+APP_PATH="/Applications/${APP_NAME}.app"
 cd "$(git rev-parse --show-toplevel)"
+
+# Rebuild and reinstall the desktop app if the installed bundle no longer
+# matches the version in the repo. Runs even when the branch was already
+# up to date, since a previous sync may have skipped the rebuild.
+update_desktop_app() {
+  [[ "$(uname)" == "Darwin" ]] || return 0
+
+  local version installed
+  version="$(node -p "require('./apps/desktop/package.json').version")"
+  installed="$(defaults read "${APP_PATH}/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo "none")"
+  if [[ "$installed" == "$version" ]]; then
+    echo "✓ Desktop app already at ${version}."
+    return 0
+  fi
+
+  echo "→ Rebuilding desktop app (installed ${installed} → ${version})..."
+  pnpm install || return 1
+  pnpm dist:desktop:dmg:arm64 || return 1
+
+  local zip="release/T3-Code-${version}-arm64.zip"
+  if [[ ! -f "$zip" ]]; then
+    echo "✖ Expected artifact ${zip} not found after build."
+    return 1
+  fi
+
+  # Swap the bundle in before quitting the running instance: the old app
+  # keeps working from open file handles, and if anything dies mid-restart
+  # the new version is already installed.
+  echo "→ Installing ${zip} to ${APP_PATH}..."
+  local staging
+  staging="$(mktemp -d)"
+  ditto -xk "$zip" "$staging" || return 1
+  rm -rf "$APP_PATH"
+  mv "${staging}/${APP_NAME}.app" "$APP_PATH"
+  rm -rf "$staging"
+
+  # If this script is itself running inside the app (a T3 terminal), quitting
+  # the app would kill the sync — leave the restart to the user in that case.
+  local pid=$$ cmd
+  while [[ "$pid" -gt 1 ]]; do
+    cmd="$(ps -o command= -p "$pid" 2>/dev/null || true)"
+    if [[ "$cmd" == *"${APP_NAME}.app"* ]]; then
+      echo "⚠ Running inside ${APP_NAME}; restart it yourself to pick up ${version}."
+      return 0
+    fi
+    pid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ' || echo 1)"
+    [[ -n "$pid" ]] || break
+  done
+
+  local pgrep_pattern="T3 Code .Alpha..app/Contents/MacOS"
+  if pgrep -qf "$pgrep_pattern"; then
+    echo "→ Restarting ${APP_NAME}..."
+    osascript -e "tell application \"${APP_NAME}\" to quit" || true
+    for _ in $(seq 1 20); do
+      pgrep -qf "$pgrep_pattern" || break
+      sleep 0.5
+    done
+    open "$APP_PATH"
+  fi
+  echo "✓ Desktop app updated to ${version}."
+}
 
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "✖ Working tree has uncommitted changes. Commit or stash them first:"
@@ -35,7 +98,8 @@ git push origin main:main
 
 behind_count="$(git rev-list --count "${WORK_BRANCH}..main")"
 if [[ "$behind_count" -eq 0 ]]; then
-  echo "✓ ${WORK_BRANCH} is already up to date with upstream. Nothing to do."
+  echo "✓ ${WORK_BRANCH} is already up to date with upstream."
+  update_desktop_app || echo "⚠ Desktop app update failed; run 'pnpm dist:desktop:dmg:arm64' manually."
   exit 0
 fi
 
@@ -57,6 +121,10 @@ echo "→ Pushing ${WORK_BRANCH} to fork..."
 git push --force-with-lease origin "$WORK_BRANCH"
 
 echo "✓ Done. main mirrors upstream, ${WORK_BRANCH} is rebased and pushed."
+
+# Keep the installed desktop app in step with the freshly synced source.
+# Non-fatal: the fork sync already succeeded.
+update_desktop_app || echo "⚠ Desktop app update failed; run 'pnpm dist:desktop:dmg:arm64' manually."
 
 # The Railway devbox runs the published npm package (not this repo), so pull
 # its update alongside the fork sync. Non-fatal: the fork sync already succeeded.
