@@ -10,6 +10,9 @@ vi.mock("@expo/ui/swift-ui", () => ({
 }));
 
 vi.mock("@expo/ui/swift-ui/modifiers", () => ({
+  containerBackground: (color: unknown, container: unknown) => ({
+    containerBackground: { color, container },
+  }),
   font: (value: unknown) => value,
   foregroundStyle: (value: unknown) => value,
   frame: (value: unknown) => value,
@@ -22,10 +25,12 @@ vi.mock("@expo/ui/swift-ui/modifiers", () => ({
 
 vi.mock("expo-widgets", () => ({
   createLiveActivity: vi.fn((name: string, layout: unknown) => ({ layout, name })),
+  createWidget: vi.fn((name: string, layout: unknown) => ({ layout, name, reload: vi.fn() })),
 }));
 
 import {
   AgentActivity,
+  AgentActivityWidgetView,
   type AgentActivityProps,
   type AgentActivityRowProps,
 } from "./AgentActivity";
@@ -279,5 +284,99 @@ describe("AgentActivity widget layout", () => {
       expect(banner).toContain(`Thread ${visible}`);
     }
     expect(banner).not.toContain("Thread 6");
+  });
+});
+
+describe("AgentActivityWidgetView home-screen layout", () => {
+  const widgetEnvironment = (
+    family: "systemSmall" | "systemMedium" | "accessoryRectangular",
+    colorScheme: "light" | "dark" = "dark",
+  ) =>
+    ({
+      date: new Date("2026-05-25T13:07:00.000Z"),
+      widgetFamily: family,
+      colorScheme,
+      isLuminanceReduced: false,
+    }) as never;
+
+  it("declares a container background on every family", () => {
+    for (const family of ["systemSmall", "systemMedium", "accessoryRectangular"] as const) {
+      const tree = JSON.stringify(
+        AgentActivityWidgetView({ ...props, activities: [makeRow({})] }, widgetEnvironment(family)),
+      );
+      expect(tree).toContain('"containerBackground"');
+      expect(tree).toContain('"container":"widget"');
+    }
+  });
+
+  it("uses a clear container background for the lock-screen accessory family", () => {
+    const tree = JSON.stringify(
+      AgentActivityWidgetView(
+        { ...props, activities: [makeRow({})] },
+        widgetEnvironment("accessoryRectangular"),
+      ),
+    );
+    expect(tree).toContain('"color":"clear"');
+  });
+
+  it("picks the system background by color scheme for system families", () => {
+    const dark = JSON.stringify(
+      AgentActivityWidgetView(
+        { ...props, activities: [makeRow({})] },
+        widgetEnvironment("systemMedium"),
+      ),
+    );
+    const light = JSON.stringify(
+      AgentActivityWidgetView(
+        { ...props, activities: [makeRow({})] },
+        widgetEnvironment("systemMedium", "light"),
+      ),
+    );
+    expect(dark).toContain('"color":"#1c1c1e"');
+    expect(light).toContain('"color":"#ffffff"');
+  });
+
+  it("survives the extension's placeholder render with empty props", () => {
+    const tree = JSON.stringify(
+      AgentActivityWidgetView({} as AgentActivityProps, widgetEnvironment("systemMedium")),
+    );
+    expect(tree).toContain("No agent activity");
+  });
+
+  it("orders rows attention-first and deep links the attention row", () => {
+    const tree = JSON.stringify(
+      AgentActivityWidgetView(
+        {
+          ...props,
+          activeCount: 2,
+          activities: [
+            makeRow({ threadTitle: "Working thread" }),
+            makeRow({
+              threadId: "thread-2",
+              threadTitle: "Blocked thread",
+              phase: "waiting_for_approval",
+              status: "Approval",
+              deepLink: "/threads/env-1/thread-2",
+            }),
+          ],
+        },
+        widgetEnvironment("systemMedium"),
+      ),
+    );
+    expect(tree.indexOf("Blocked thread")).toBeGreaterThan(-1);
+    expect(tree.indexOf("Blocked thread")).toBeLessThan(tree.indexOf("Working thread"));
+    expect(tree).toContain('"widgetURL":"t3code://threads/env-1/thread-2"');
+    expect(tree).toContain("1 needs attention");
+  });
+
+  it("shows the empty state instead of a Done outcome after a sign-out reset", () => {
+    const tree = JSON.stringify(
+      AgentActivityWidgetView(
+        { ...props, subtitle: "", activeCount: 0, activities: [] },
+        widgetEnvironment("systemSmall"),
+      ),
+    );
+    expect(tree).toContain("No agent activity");
+    expect(tree).not.toContain("Done");
   });
 });
