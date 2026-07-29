@@ -1,6 +1,7 @@
 import { HStack, Image, Spacer, Text, VStack, ZStack } from "@expo/ui/swift-ui";
 import type { ComponentProps } from "react";
 import {
+  containerBackground,
   font,
   foregroundStyle,
   frame,
@@ -12,8 +13,10 @@ import {
 } from "@expo/ui/swift-ui/modifiers";
 import {
   createLiveActivity,
+  createWidget,
   type LiveActivityComponent,
   type LiveActivityLayout,
+  type WidgetEnvironment,
 } from "expo-widgets";
 
 type LiveActivityEnvironment = Parameters<LiveActivityComponent<AgentActivityProps>>[1];
@@ -377,5 +380,296 @@ export function AgentActivity(
     ),
   };
 }
+
+// Home-screen widget for the same "AgentActivity" kind (the Live Activity
+// above shares the name but lives under a separate layout key). Also
+// serialized into the widget extension's JS bundle, so it duplicates the
+// palette/label logic inline instead of sharing module-scope helpers.
+//
+// iOS 17+ refuses to render a widget whose view tree never declares a
+// container background ("Please adopt containerBackground API"), so the root
+// of every family carries one. The extension renders a placeholder entry with
+// empty props before the app has ever written a timeline; every prop access
+// must tolerate that.
+export function AgentActivityWidgetView(props: AgentActivityProps, environment: WidgetEnvironment) {
+  "widget";
+
+  const primaryForeground = "primary";
+  const secondaryForeground = "secondary";
+
+  const isLightScheme = environment.colorScheme === "light";
+  const phaseTint = (phase: AgentActivityPhase | undefined): string => {
+    if (environment.isLuminanceReduced) {
+      return secondaryForeground;
+    }
+    switch (phase) {
+      case "waiting_for_approval":
+        return isLightScheme ? "#d97706" : "#fcd34d"; // amber-600 / amber-300
+      case "waiting_for_input":
+        return isLightScheme ? "#4f46e5" : "#a5b4fc"; // indigo-600 / indigo-300
+      case "failed":
+        return isLightScheme ? "#dc2626" : "#fca5a5"; // red-600 / red-300
+      case "completed":
+        return isLightScheme ? "#059669" : "#6ee7b7"; // emerald-600 / emerald-300
+      case "starting":
+      case "running":
+      default:
+        return isLightScheme ? "#0284c7" : "#7dd3fc"; // sky-600 / sky-300
+    }
+  };
+
+  const activities = props.activities ?? [];
+  const activeCount = props.activeCount ?? 0;
+
+  const phasePriority = (phase: AgentActivityPhase): number => {
+    if (phase === "waiting_for_approval" || phase === "waiting_for_input") return 0;
+    if (phase === "failed") return 1;
+    if (phase === "running" || phase === "starting") return 2;
+    return 3;
+  };
+  const ordered = [...activities].sort((a, b) => phasePriority(a.phase) - phasePriority(b.phase));
+  const row0 = ordered[0];
+  const row1 = ordered[1];
+  const row2 = ordered[2];
+  const row3 = ordered[3];
+
+  const attentionRows = activities.filter(
+    (row) => row.phase === "waiting_for_approval" || row.phase === "waiting_for_input",
+  );
+  const attentionRow = attentionRows[0];
+  const failedRow = activities.find((row) => row.phase === "failed");
+  const heroRow = attentionRow ?? failedRow ?? row0;
+  const headerTint = attentionRow
+    ? phaseTint(attentionRow.phase)
+    : failedRow
+      ? phaseTint(failedRow.phase)
+      : phaseTint(heroRow?.phase);
+
+  const allDone = activeCount === 0;
+  const doneLabel = failedRow ? "Failed" : "Done";
+  const outcomeLabel = failedRow ? "Agent work failed" : "Agent work completed";
+  const agentWord = activeCount === 1 ? "agent" : "agents";
+  const agentsLabel = allDone ? outcomeLabel : `${activeCount} active ${agentWord}`;
+  const attentionSuffix =
+    attentionRows.length > 0
+      ? `${attentionRows.length} need${attentionRows.length === 1 ? "s" : ""} attention`
+      : "";
+  const activeLabel = allDone ? doneLabel : `${activeCount} active`;
+  // Before the app ever wrote data (or after sign-out) there is nothing to
+  // report; a bare "Done" would misread as finished work.
+  const isEmpty = activities.length === 0;
+
+  const deepLinkRow = attentionRow ?? row0;
+  const deepLink =
+    deepLinkRow && deepLinkRow.deepLink.startsWith("/") && !deepLinkRow.deepLink.startsWith("//")
+      ? `t3code://${deepLinkRow.deepLink.slice(1)}`
+      : null;
+
+  const renderLogo = (height: number, color: string) => (
+    <HStack modifiers={[frame({ width: height * 1.5, height }), foregroundStyle(color)]}>
+      <Image assetName="T3Mark" modifiers={[resizable()]} />
+    </HStack>
+  );
+
+  const renderCompactRow = (row: AgentActivityRowProps) => (
+    <HStack spacing={7} alignment="center">
+      <Text
+        modifiers={[
+          font({ weight: "semibold", size: 13 }),
+          foregroundStyle(primaryForeground),
+          lineLimit(1),
+        ]}
+      >
+        {row.threadTitle}
+      </Text>
+      <Text modifiers={[font({ size: 11 }), foregroundStyle(secondaryForeground), lineLimit(1)]}>
+        {row.projectTitle}
+      </Text>
+      <Spacer minLength={8} />
+      <Text
+        modifiers={[
+          font({ weight: "semibold", size: 11 }),
+          foregroundStyle(phaseTint(row.phase)),
+          layoutPriority(1),
+        ]}
+      >
+        {row.status}
+      </Text>
+    </HStack>
+  );
+
+  const family = environment.widgetFamily;
+
+  // Lock-screen accessory widgets render vibrant/monochrome on the system's
+  // own material; declare a clear container background so WidgetKit accepts
+  // the view without painting over that material.
+  if (family === "accessoryRectangular") {
+    const rootModifiers = [
+      containerBackground("clear", "widget"),
+      ...(deepLink ? [widgetURL(deepLink)] : []),
+    ];
+    return (
+      <VStack alignment="leading" spacing={2} modifiers={rootModifiers}>
+        <Text
+          modifiers={[
+            font({ weight: "semibold", size: 13 }),
+            foregroundStyle(primaryForeground),
+            lineLimit(1),
+          ]}
+        >
+          {isEmpty ? "T3 Code" : attentionSuffix || agentsLabel}
+        </Text>
+        {heroRow ? (
+          <Text
+            modifiers={[font({ size: 12 }), foregroundStyle(secondaryForeground), lineLimit(1)]}
+          >
+            {heroRow.threadTitle}
+          </Text>
+        ) : (
+          <Text
+            modifiers={[font({ size: 12 }), foregroundStyle(secondaryForeground), lineLimit(1)]}
+          >
+            No agent activity
+          </Text>
+        )}
+        {heroRow ? (
+          <Text
+            modifiers={[
+              font({ weight: "semibold", size: 11 }),
+              foregroundStyle(phaseTint(heroRow.phase)),
+              lineLimit(1),
+            ]}
+          >
+            {heroRow.status}
+          </Text>
+        ) : null}
+      </VStack>
+    );
+  }
+
+  // System-family background matching the stock widget look: system
+  // background in light mode, elevated dark gray in dark mode. The system's
+  // default content margins provide the outer padding.
+  const rootModifiers = [
+    containerBackground(isLightScheme ? "#ffffff" : "#1c1c1e", "widget"),
+    ...(deepLink ? [widgetURL(deepLink)] : []),
+  ];
+
+  if (family === "systemSmall") {
+    return (
+      <VStack alignment="leading" spacing={3} modifiers={rootModifiers}>
+        <HStack spacing={0} alignment="center">
+          {renderLogo(13, primaryForeground)}
+          <Spacer minLength={0} />
+        </HStack>
+        <Spacer minLength={0} />
+        {isEmpty ? (
+          <Text modifiers={[font({ size: 13 }), foregroundStyle(secondaryForeground)]}>
+            No agent activity
+          </Text>
+        ) : (
+          <Text
+            modifiers={[
+              font({ weight: "bold", size: 20 }),
+              foregroundStyle(headerTint),
+              lineLimit(1),
+            ]}
+          >
+            {activeLabel}
+          </Text>
+        )}
+        {attentionSuffix ? (
+          <Text
+            modifiers={[
+              font({ weight: "semibold", size: 12 }),
+              foregroundStyle(headerTint),
+              lineLimit(1),
+            ]}
+          >
+            {attentionSuffix}
+          </Text>
+        ) : null}
+        {heroRow ? (
+          <Text
+            modifiers={[
+              font({ weight: "semibold", size: 12 }),
+              foregroundStyle(primaryForeground),
+              lineLimit(1),
+            ]}
+          >
+            {heroRow.threadTitle}
+          </Text>
+        ) : null}
+        {heroRow ? (
+          <Text
+            modifiers={[
+              font({ weight: "semibold", size: 11 }),
+              foregroundStyle(phaseTint(heroRow.phase)),
+              lineLimit(1),
+            ]}
+          >
+            {heroRow.status}
+          </Text>
+        ) : null}
+      </VStack>
+    );
+  }
+
+  // systemMedium (and any future larger family): banner-style header plus as
+  // many rows as fit.
+  return (
+    <VStack alignment="leading" spacing={6} modifiers={rootModifiers}>
+      <HStack spacing={6} alignment="center">
+        {renderLogo(13, primaryForeground)}
+        <Spacer minLength={6} />
+        <Text
+          modifiers={[
+            font({ weight: "semibold", size: 13 }),
+            foregroundStyle(
+              isEmpty ? secondaryForeground : allDone ? headerTint : primaryForeground,
+            ),
+            lineLimit(1),
+          ]}
+        >
+          {isEmpty ? "No agent activity" : agentsLabel}
+        </Text>
+        {attentionSuffix ? (
+          <Text modifiers={[font({ size: 13 }), foregroundStyle(secondaryForeground)]}>·</Text>
+        ) : null}
+        {attentionSuffix ? (
+          <Text
+            modifiers={[
+              font({ weight: "semibold", size: 13 }),
+              foregroundStyle(headerTint),
+              lineLimit(1),
+            ]}
+          >
+            {attentionSuffix}
+          </Text>
+        ) : null}
+        <Spacer minLength={6} />
+      </HStack>
+      {row0 ? renderCompactRow(row0) : null}
+      {row1 ? renderCompactRow(row1) : null}
+      {row2 ? renderCompactRow(row2) : null}
+      {row3 ? renderCompactRow(row3) : null}
+      <Spacer minLength={0} />
+    </VStack>
+  );
+}
+
+// Registering the widget writes the serialized layout into the shared app
+// group, which is what replaces the "Please adopt containerBackground API"
+// placeholder with real content once a snapshot is written.
+export const AgentActivityWidget = createWidget<AgentActivityProps>(
+  "AgentActivity",
+  AgentActivityWidgetView,
+);
+
+// A widget added before the app ever wrote this layout (fresh install) fails
+// WidgetKit's containerBackground check via the extension's fallback view,
+// and WidgetKit caches that failed render until the timeline is reloaded.
+// Nudge it now that the layout exists; data arrives via updateSnapshot later.
+AgentActivityWidget.reload();
 
 export default createLiveActivity<AgentActivityProps>("AgentActivity", AgentActivity);

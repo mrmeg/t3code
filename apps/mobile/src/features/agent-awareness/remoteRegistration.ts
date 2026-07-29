@@ -29,7 +29,10 @@ import {
   loadPreferences,
   saveAgentAwarenessRegistrationRecord,
 } from "../../persistence/imperative";
-import AgentActivity, { type AgentActivityProps } from "../../widgets/AgentActivity";
+import AgentActivity, {
+  AgentActivityWidget,
+  type AgentActivityProps,
+} from "../../widgets/AgentActivity";
 import { resolveCloudPublicConfig } from "../cloud/publicConfig";
 import { supportsAgentAwarenessPush } from "./capabilities";
 import { makeRelayDeviceRegistrationRequest, resolveApsEnvironment } from "./registrationPayload";
@@ -195,6 +198,15 @@ export function setAgentAwarenessRelayTokenProvider(
     // Without a signed-in user the relay can no longer update or end these
     // activities, so they would sit orphaned on the lock screen.
     endLocalLiveActivities("live activity cleanup after cloud sign-out failed");
+    // Same for the home-screen widget: nothing will repaint it after sign-out,
+    // so it would show the previous account's agents forever.
+    updateAgentActivityWidget({
+      title: "T3 Code",
+      subtitle: "",
+      activeCount: 0,
+      updatedAt: new Date(Date.now()).toISOString(),
+      activities: [],
+    });
     setRegistrationStatus("unknown");
     // Sign-out is the only thing that invalidates a stored registration, so the
     // next sign-in re-registers.
@@ -479,7 +491,7 @@ function armAgentAwarenessLiveActivityForLocalWorkNow(input: {
       return;
     }
     const nowIso = new Date(Date.now()).toISOString();
-    const activity = AgentActivity.start({
+    const seededProps: AgentActivityProps = {
       title: "T3 Code",
       subtitle: "Agent work in progress",
       activeCount: 1,
@@ -497,7 +509,9 @@ function armAgentAwarenessLiveActivityForLocalWorkNow(input: {
           deepLink: "/",
         },
       ],
-    });
+    };
+    updateAgentActivityWidget(seededProps);
+    const activity = AgentActivity.start(seededProps);
     logRegistrationDebug("live activity card armed for local work", {
       threadTitle: input.threadTitle,
     });
@@ -766,6 +780,21 @@ function ensureAppStateListener(): void {
       "active live activity reconciliation after app foreground failed",
     );
   });
+}
+
+// The home-screen widget has no push channel — relay pushes reach the Live
+// Activity token, not WidgetKit — so the app repaints it whenever it holds
+// the aggregate: on local arming, on every foreground/sign-in reconciliation,
+// and (with an empty aggregate) on sign-out.
+function updateAgentActivityWidget(props: AgentActivityProps): void {
+  if (!canRegisterRemoteLiveActivities()) {
+    return;
+  }
+  try {
+    AgentActivityWidget.updateSnapshot(props);
+  } catch (error) {
+    logRegistrationError("agent activity widget update failed", error);
+  }
 }
 
 function endLocalLiveActivities(context: string): void {
@@ -1037,6 +1066,33 @@ export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
       activities = activities.slice(0, 1);
     }
 
+    // Every reconciliation reads the aggregate — not just the arming path —
+    // because it is also the only refresh channel for the home-screen widget:
+    // relay pushes update the Live Activity, but the widget can only be
+    // repainted from the app process.
+    const snapshot = yield* readAgentActivitySnapshot();
+    if (snapshot?.aggregate) {
+      const widgetAggregate = snapshot.aggregate;
+      updateAgentActivityWidget({
+        title: widgetAggregate.title,
+        subtitle: widgetAggregate.subtitle,
+        activeCount: widgetAggregate.activeCount,
+        updatedAt: widgetAggregate.updatedAt,
+        activities: widgetAggregate.activities,
+      });
+    } else if (snapshot) {
+      // A response with a null aggregate is the relay authoritatively saying
+      // "no activity" — paint the empty state so a fresh install's widget gets
+      // its first real render (and stale rows from a previous session clear).
+      updateAgentActivityWidget({
+        title: "T3 Code",
+        subtitle: "",
+        activeCount: 0,
+        updatedAt: new Date(Date.now()).toISOString(),
+        activities: [],
+      });
+    }
+
     // Activities are only ever created here, in the foreground, where the
     // update token can be observed and registered immediately — the relay
     // never remote-starts one (background push-to-start wakes proved too
@@ -1056,8 +1112,7 @@ export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
       // The toggle defaults to on: an unset preference (fresh install) must
       // prime, so only an explicit false blocks it.
       if (preferences?.liveActivitiesEnabled !== false) {
-        const snapshot = yield* readAgentActivitySnapshot();
-        // The snapshot request yields; an arm-on-send may have created the
+        // The snapshot request yielded; an arm-on-send may have created the
         // card in the meantime. Re-check so two cards are never started.
         const armedMeanwhile = yield* Effect.try({
           try: () => AgentActivity.getInstances(),
