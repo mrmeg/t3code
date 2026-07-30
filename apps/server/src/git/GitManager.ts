@@ -173,6 +173,7 @@ interface OpenPrInfo {
 }
 
 interface PullRequestInfo extends OpenPrInfo, PullRequestHeadRemoteInfo {
+  headSha?: string;
   state: "open" | "closed" | "merged";
   isDraft?: boolean;
   closedAt?: string | null;
@@ -428,6 +429,7 @@ function toPullRequestInfo(summary: ChangeRequest): PullRequestInfo {
     url: summary.url,
     baseRefName: summary.baseRefName,
     headRefName: summary.headRefName,
+    ...(summary.headSha !== undefined ? { headSha: summary.headSha } : {}),
     state: summary.state ?? "open",
     ...(summary.isDraft === true ? { isDraft: true } : {}),
     closedAt: summary.closedAt ?? null,
@@ -1153,15 +1155,29 @@ export const make = Effect.gen(function* () {
       }
     }
     return yield* Cache.get(prLookupCache, cacheKey).pipe(
-      Effect.map(({ latest, headContext }) => {
-        if (!latest) return { pr: null, headContext };
-        // On the default branch, only surface open PRs.
-        // Merged/closed matches are usually reverse-merge history, not the thread's PR context.
-        if (details.isDefaultBranch && latest.state !== "open") {
-          return { pr: null, headContext };
-        }
-        return { pr: toStatusPr(latest), headContext };
-      }),
+      Effect.flatMap(({ latest, headContext }) =>
+        Effect.gen(function* () {
+          if (!latest) return { pr: null, headContext };
+          // On the default branch, only surface open PRs.
+          // Merged/closed matches are usually reverse-merge history, not the thread's PR context.
+          if (details.isDefaultBranch && latest.state !== "open") {
+            return { pr: null, headContext };
+          }
+          if (latest.state !== "open" && latest.headSha !== undefined) {
+            const head = yield* gitCore.execute({
+              operation: "GitManager.lookupStatusPr.currentHead",
+              cwd,
+              args: ["rev-parse", "HEAD"],
+              allowNonZeroExit: true,
+            });
+            const currentHeadSha = head.exitCode === 0 ? head.stdout.trim() : "";
+            if (currentHeadSha.length > 0 && currentHeadSha !== latest.headSha) {
+              return { pr: null, headContext };
+            }
+          }
+          return { pr: toStatusPr(latest), headContext };
+        }),
+      ),
       Effect.tap(({ pr, headContext }) =>
         Effect.sync(() =>
           rememberLastKnownPr(branchKey, {
