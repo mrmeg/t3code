@@ -191,9 +191,14 @@ const config: ExpoConfig = {
   userInterfaceStyle: "automatic",
   updates: {
     enabled: true,
-    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+    url: `https://u.expo.dev/${customExpoProjectId ?? "d763fcb8-d37c-41ea-a773-b54a0ab4a454"}`,
     checkAutomatically: "ON_LOAD",
     fallbackToCacheTimeout: 0,
+    // Local (non-EAS) builds have no channel baked in; pin one so
+    // `eas update --channel <variant>` can reach them.
+    requestHeaders: {
+      "expo-channel-name": APP_VARIANT,
+    },
   },
   ios: {
     icon: variant.assets.iosIcon,
