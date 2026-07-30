@@ -28,6 +28,7 @@ export const ChangeRequest = Schema.Struct({
   url: Schema.String,
   baseRefName: TrimmedNonEmptyString,
   headRefName: TrimmedNonEmptyString,
+  headSha: Schema.optional(TrimmedNonEmptyString),
   state: ChangeRequestState,
   updatedAt: Schema.Option(Schema.DateTimeUtc),
   isCrossRepository: Schema.optional(Schema.Boolean),

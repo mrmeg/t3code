@@ -508,7 +508,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
             "--limit",
             String(input.limit ?? 1),
             "--json",
-            "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
+            "number,title,url,baseRefName,headRefName,headRefOid,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
           ],
         }).pipe(
           Effect.map((result) => JSON.parse(result.stdout) as unknown[]),
@@ -552,7 +552,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
             "view",
             input.reference,
             "--json",
-            "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
+            "number,title,url,baseRefName,headRefName,headRefOid,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
           ],
         }).pipe(
           Effect.map((result) => JSON.parse(result.stdout) as GitHubCli.GitHubPullRequestSummary),
@@ -1612,7 +1612,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           updatedAt: "2026-03-10T07:00:00.000Z",
         });
         expect(ghCalls).toContain(
-          "pr list --head jasonLaster:statemachine --state all --limit 20 --json number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
+          "pr list --head jasonLaster:statemachine --state all --limit 20 --json number,title,url,baseRefName,headRefName,headRefOid,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
         );
       }),
     20_000,
@@ -1678,7 +1678,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           updatedAt: "2026-03-10T07:00:00.000Z",
         });
         expect(ghCalls).toContain(
-          "pr list --head contributor:main --state all --limit 20 --json number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
+          "pr list --head contributor:main --state all --limit 20 --json number,title,url,baseRefName,headRefName,headRefOid,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
         );
       }),
     20_000,
@@ -1806,6 +1806,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
       yield* initRepo(repoDir);
       yield* runGit(repoDir, ["checkout", "-b", "feature/status-merged-pr"]);
+      const headSha = (yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout.trim();
 
       const { manager } = yield* makeManager({
         ghScenario: {
@@ -1818,6 +1819,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                 url: "https://github.com/pingdotgg/codething-mvp/pull/22",
                 baseRefName: "main",
                 headRefName: "feature/status-merged-pr",
+                headRefOid: headSha,
                 state: "MERGED",
                 mergedAt: "2026-01-30T10:00:00Z",
                 updatedAt: "2026-01-30T10:00:00Z",
@@ -1838,6 +1840,41 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         state: "merged",
         updatedAt: "2026-01-30T10:00:00.000Z",
       });
+    }),
+  );
+
+  it.effect("status ignores a merged PR after its branch advances", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/status-advanced-after-merge"]);
+      const mergedHeadSha = (yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout.trim();
+      yield* runGit(repoDir, ["commit", "--allow-empty", "-m", "Continue work after merge"]);
+
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify([
+              {
+                number: 24,
+                title: "Merged PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/24",
+                baseRefName: "main",
+                headRefName: "feature/status-advanced-after-merge",
+                headRefOid: mergedHeadSha,
+                state: "MERGED",
+                mergedAt: "2026-01-30T10:00:00Z",
+                updatedAt: "2026-01-30T10:00:00Z",
+              },
+            ]),
+          ],
+        },
+      });
+
+      const status = yield* manager.status({ cwd: repoDir });
+      expect(status.refName).toBe("feature/status-advanced-after-merge");
+      expect(status.pr).toBeNull();
     }),
   );
 
