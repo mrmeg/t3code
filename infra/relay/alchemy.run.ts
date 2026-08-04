@@ -5,9 +5,11 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
 import * as RelayDb from "./src/db.ts";
 import { RelayObservability } from "./src/observability.ts";
+import { WebApp } from "./src/webApp.ts";
 import { ManagedEndpointZone, RelayApiZone } from "./src/zone.ts";
 import ApiLive, { Api } from "./src/worker.ts";
 
@@ -23,11 +25,16 @@ export default Alchemy.Stack(
     const relayApiZone = yield* RelayApiZone.pipe(Effect.orDie);
     const observability = yield* RelayObservability;
     const api = yield* Api;
+    const webApp = yield* WebApp.pipe(Effect.orDie);
 
     return {
       hyperdriveName: hyperdrive.name,
       workerName: api.workerName,
       url: api.url,
+      webAppUrl: Option.match(webApp, {
+        onNone: () => "",
+        onSome: ({ domain }) => `https://${domain}`,
+      }),
       relayApiZoneId: relayApiZone.zoneId,
       managedEndpointZoneId: managedEndpointZone.zoneId,
       mobileTracingUrl: observability.traces.otelTracesEndpoint,
