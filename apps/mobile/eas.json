@@ -49,6 +49,11 @@
       "channel": "production",
       "environment": "production",
       "autoIncrement": true
+    },
+    "production:device": {
+      "extends": "production",
+      "distribution": "internal",
+      "autoIncrement": false
     }
   },
   "submit": {
