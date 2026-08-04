@@ -19,3 +19,28 @@ index a0e3e24d6070c5ec0a220af3cb56fe3373fe1968..d610cc38dd8dee363ea2f1822aea0c4a
      let hostObject = expo.HostObject.makeObject(pointee, consume callbacks)
  
      return JavaScriptObject(self, hostObject)
+diff --git a/apple/scripts/build-xcframework.sh b/apple/scripts/build-xcframework.sh
+index 1111111111111111111111111111111111111111..2222222222222222222222222222222222222222 100755
+--- a/apple/scripts/build-xcframework.sh
++++ b/apple/scripts/build-xcframework.sh
+@@ -199,6 +199,11 @@
+     env_args+=(DEVELOPER_DIR="$DEVELOPER_DIR")
+   fi
+ 
++  # Xcode 27 betas emit a spurious "error: the following command failed with
++  # exit code 0 but produced no further output" line even when this nested
++  # build succeeds. The outer Xcode fails any script phase whose output
++  # contains "error:", so rewrite that one line. `pipefail` still propagates
++  # real xcodebuild failures through the pipe.
+   (cd "$PACKAGE_DIR" && env -i "${env_args[@]}" \
+     xcodebuild \
+     build \
+@@ -217,7 +222,7 @@
+     DEBUG_INFORMATION_FORMAT=dwarf-with-dsym \
+     COMPILER_INDEX_STORE_ENABLE=NO \
+     SWIFT_COMPILATION_MODE=wholemodule \
+-  )
++  ) 2>&1 | sed -e 's/^error: the following command failed with exit code 0/note: [ExpoModulesJSI] inner xcodebuild reported: command failed with exit code 0/'
+ 
+   local product_path="${BUILD_PRODUCTS_PATH}/${build_dir_name}"
+   local framework_src="${product_path}/PackageFrameworks/${PACKAGE_NAME}.framework"

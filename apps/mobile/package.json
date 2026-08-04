@@ -26,6 +26,7 @@
     "ios:preview": "APP_VARIANT=preview EXPO_NO_GIT_STATUS=1 expo prebuild --clean --platform ios && expo run:ios",
     "ios:prod": "APP_VARIANT=production EXPO_NO_GIT_STATUS=1 expo prebuild --clean --platform ios && expo run:ios",
     "ios:release": "APP_VARIANT=production EXPO_NO_GIT_STATUS=1 expo prebuild --clean --platform ios && expo run:ios --configuration Release --no-bundler",
+    "ios:release:device": "eas build --profile production:device -p ios --local --non-interactive --output build/T3Code-release-device.ipa && xcrun devicectl device install app --device 00008110-000248D111F1801E build/T3Code-release-device.ipa",
     "eas:ios:dev": "eas build --profile development -p ios",
     "eas:ios:preview": "eas build --profile preview -p ios",
     "eas:ios:preview:dev": "eas build --profile preview:dev -p ios",
@@ -127,9 +128,6 @@
     "babel-preset-expo": "~56.0.0",
     "tailwindcss": "^4.0.0",
     "typescript": "catalog:"
-  },
-  "overrides": {
-    "react-native-nitro-markdown": "file:deps/react-native-nitro-markdown-0.5.0.tgz"
   },
   "expo": {
     "install": {
