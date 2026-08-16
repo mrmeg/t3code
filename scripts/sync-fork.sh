@@ -139,3 +139,27 @@ else
   echo "⚠ Devbox update failed (offline or CLI not logged in?). Run manually:"
   echo "  railway ssh -- npm i -g t3@latest"
 fi
+
+# The client devbox (neurospicyos, Alynn's workspace) also runs the published
+# package; bump it in place alongside. Non-fatal.
+echo "→ Updating t3 on the neurospicyos devbox..."
+if railway ssh \
+    --project a334dbf3-e0b1-4108-b953-51dfc06f6802 \
+    --environment 972de3b3-54b5-4689-8406-5c83ce04355d \
+    --service 6da7bde1-e7bb-4f12-b4be-136d882deeec \
+    -- npm i -g t3@latest; then
+  echo "✓ neurospicyos devbox t3 updated."
+else
+  echo "⚠ neurospicyos devbox update failed. Run manually from infra/devbox (linked)."
+fi
+
+# Keep the deployed relay + hosted web app (relay.mrmeg.com / code.mrmeg.com)
+# in step with the rebased branch. Alchemy memoizes the web build, so this is
+# cheap when nothing web-facing changed. Non-fatal: the sync already succeeded.
+echo "→ Deploying relay + hosted web app..."
+if vp run --filter t3code-relay deploy --stage prod --yes; then
+  echo "✓ Relay stack deployed (relay.mrmeg.com, code.mrmeg.com)."
+else
+  echo "⚠ Relay deploy failed; run manually:"
+  echo "  vp run --filter t3code-relay deploy --stage prod --yes"
+fi
