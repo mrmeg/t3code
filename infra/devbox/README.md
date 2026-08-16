@@ -43,7 +43,7 @@ All commands run on the box; the client's identities, never yours:
    - Claude: Anthropic API key / `claude setup-token` output, as a service
      variable or in `/data/home`.
      Same goes for GitHub: `gh auth login` uses a device code, so the client can
-     run it from the T3 terminal too.
+     run it from the T3 terminal too (step 1 can happen there as well).
 4. `t3 connect login --base-dir /data/t3code` signed in as the client's Clerk
    user — forward the OAuth callback first:
    `ssh -L 34338:127.0.0.1:34338 <box>` (see HOW-IT-WORKS.md).
