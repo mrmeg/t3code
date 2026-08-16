@@ -41,11 +41,9 @@ export const WebApp = Effect.gen(function* () {
 
   const site = yield* Cloudflare.Website.StaticSite("WebApp", {
     cwd: REPO_ROOT,
-    // The executor spawns without a shell by default; opt in so the two
-    // build steps can be chained.
-    shell: true,
-    command:
-      "vp run --filter @t3tools/web build && node scripts/apply-web-brand-assets.ts production",
+    // The executor spawns argv without a shell (`shell: true` is accepted by
+    // the type but not honored), so the two build steps live in a wrapper.
+    command: "node scripts/build-hosted-webapp.ts",
     outdir: "apps/web/dist",
     env: {
       VITE_HOSTED_APP_URL: `https://${webAppDomain.value}`,
