@@ -36,6 +36,7 @@ which case it installs the bundle but leaves the restart to the user.
 3. If it stops with a dirty working tree, show the user what's uncommitted and ask whether to commit it to `mrmeg` first (never to `main`).
 4. If it stops on a rebase conflict:
    - Inspect the conflict; personal commits on `mrmeg` are few and focused (iOS signing env vars in `apps/mobile/app.config.ts`, plugin registrations), so prefer keeping BOTH upstream's changes and the personal customization when merging hunks.
-   - After resolving: `git add <files> && git rebase --continue`, then `git push --force-with-lease origin mrmeg`.
+   - After resolving: `git add <files> && git rebase --continue`, then `git push --force-with-lease origin mrmeg`,
+     then re-run `./scripts/sync-fork.sh` to finish the desktop, devbox, and relay steps the conflict cut short.
    - If the conflict indicates upstream now natively supports something a personal commit does (e.g. they added their own bundle-ID override), drop that commit from the rebase and tell the user their patch is obsolete.
 5. Confirm the final state: `git branch -vv` should show `mrmeg` tracking `origin/mrmeg` up to date, and `main` matching `upstream/main`.

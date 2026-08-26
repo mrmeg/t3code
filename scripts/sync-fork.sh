@@ -14,8 +14,7 @@ APP_PATH="/Applications/${APP_NAME}.app"
 cd "$(git rev-parse --show-toplevel)"
 
 # Rebuild and reinstall the desktop app if the installed bundle no longer
-# matches the version in the repo. Runs even when the branch was already
-# up to date, since a previous sync may have skipped the rebuild.
+# matches the version in the repo.
 update_desktop_app() {
   [[ "$(uname)" == "Darwin" ]] || return 0
 
@@ -96,31 +95,37 @@ fi
 echo "→ Pushing main to fork..."
 git push origin main:main
 
+# The steps after the rebase build and deploy from the work branch, so land on
+# it whether or not there was anything to rebase.
+git checkout "$WORK_BRANCH"
+
 behind_count="$(git rev-list --count "${WORK_BRANCH}..main")"
 if [[ "$behind_count" -eq 0 ]]; then
   echo "✓ ${WORK_BRANCH} is already up to date with upstream."
-  update_desktop_app || echo "⚠ Desktop app update failed; run 'pnpm dist:desktop:dmg:arm64' manually."
-  exit 0
-fi
-
-echo "→ Rebasing ${WORK_BRANCH} onto main (${behind_count} new upstream commits)..."
-git checkout "$WORK_BRANCH"
-if ! git rebase main; then
-  cat <<'EOF'
+else
+  echo "→ Rebasing ${WORK_BRANCH} onto main (${behind_count} new upstream commits)..."
+  if ! git rebase main; then
+    cat <<'EOF'
 
 ✖ Rebase conflict. Your changes overlap with new upstream commits.
   1. Fix the conflicted files listed above (usually apps/mobile/app.config.ts)
   2. git add <files> && git rebase --continue
   3. git push --force-with-lease origin mrmeg
+  4. Re-run this script to finish the desktop, devbox, and relay steps
   Or bail out completely with: git rebase --abort
 EOF
-  exit 1
+    exit 1
+  fi
+
+  echo "→ Pushing ${WORK_BRANCH} to fork..."
+  git push --force-with-lease origin "$WORK_BRANCH"
+
+  echo "✓ Done. main mirrors upstream, ${WORK_BRANCH} is rebased and pushed."
 fi
 
-echo "→ Pushing ${WORK_BRANCH} to fork..."
-git push --force-with-lease origin "$WORK_BRANCH"
-
-echo "✓ Done. main mirrors upstream, ${WORK_BRANCH} is rebased and pushed."
+# Everything below runs even when the branch was already up to date: a previous
+# sync may have stopped on a conflict before reaching it, and the devbox and
+# relay drift on their own schedule regardless of what upstream did.
 
 # Keep the installed desktop app in step with the freshly synced source.
 # Non-fatal: the fork sync already succeeded.
