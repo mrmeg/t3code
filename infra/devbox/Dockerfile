@@ -13,7 +13,9 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 # t3 plus the provider CLIs it can spawn; auth state for both lands under
-# $HOME (/data/home) so logins survive redeploys.
+# $HOME (/data/home) so logins survive redeploys. Docker caches this layer, so
+# these versions are only a floor: entrypoint.sh reinstalls t3 on every start.
+# The provider CLIs are NOT refreshed there and stay pinned to this layer.
 RUN npm i -g t3@latest @openai/codex@latest @anthropic-ai/claude-code@latest
 
 # All credentials (gh, git, provider) and t3 state live under the /data

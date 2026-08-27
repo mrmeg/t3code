@@ -52,8 +52,10 @@ All commands run on the box; the client's identities, never yours:
 
 ## Operations
 
-- Update t3: `railway redeploy` rebuilds the image with `t3@latest` (layer
-  cache permitting), or `railway ssh -- npm i -g t3@latest` for a quick bump.
+- Update t3: nothing to do. `entrypoint.sh` runs `npm i -g t3@latest` on every
+  container start, so any restart or `railway redeploy` lands on the current
+  release. The Dockerfile's `t3@latest` only sets the fallback baked into the
+  image, and Docker caches that layer indefinitely — do not rely on it.
 - Logs: Railway deploy logs (serve writes to stdout).
 - Known gotcha: Cloudflare Bot Fight Mode challenges Railway egress IPs —
   keep it off on the zone (HOW-IT-WORKS.md debugging map).
