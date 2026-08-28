@@ -50,6 +50,31 @@ All commands run on the box; the client's identities, never yours:
 5. `t3 connect link --base-dir /data/t3code`, then `railway redeploy` so the
    next serve reconciles the link and opens the tunnel.
 
+## Personal box (mrmeg)
+
+Matt's own devbox (project `devbox`, `5e74fae8-5b59-4f41-b778-f140ec224646`,
+service `devbox`, workspace "mrmeg's Projects" — also hosts the relay Postgres,
+which must never be taken down with it) runs this same image, but is connected
+to the fork repo (`mrmeg/t3code`, branch `mrmeg`, root directory
+`/infra/devbox`) instead of CLI `railway up`: pushes that touch
+`infra/devbox/**` rebuild it automatically (`watchPatterns` in `railway.json`).
+
+Daily refresh: `DEVBOX_RESTART_AT_UTC=08:00` on the service makes the container
+exit at 4am ET; restart policy ALWAYS boots a fresh one, which reinstalls
+`t3@latest` and resets memory to baseline. No cron service, no token.
+
+Lifecycle (also available from the Railway dashboard / mobile app):
+
+```sh
+# stop when not working (volume and its data persist; only the volume bills)
+railway down --project 5e74fae8-5b59-4f41-b778-f140ec224646 --service devbox -y
+# start again / restart now to reset memory
+railway redeploy --project 5e74fae8-5b59-4f41-b778-f140ec224646 --service devbox -y
+```
+
+While the box is stopped there is no container to exit, so the daily restart
+cannot revive it — `down` sticks until the next `redeploy`.
+
 ## Operations
 
 - Update t3: nothing to do. `entrypoint.sh` runs `npm i -g t3@latest` on every
