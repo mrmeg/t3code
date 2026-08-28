@@ -1,9 +1,11 @@
 FROM node:24-bookworm
 
 # git ships with the base image; gh powers T3's GitHub integration (PRs,
-# statuses, clone lookups).
+# statuses, clone lookups). zsh is for interactive terminals — T3 spawns
+# $SHELL, so set SHELL=/usr/bin/zsh on the service to use it; shell config
+# lives in $HOME on the volume.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl \
+  && apt-get install -y --no-install-recommends ca-certificates curl zsh \
   && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
   && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
