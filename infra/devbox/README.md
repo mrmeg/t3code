@@ -75,12 +75,54 @@ railway redeploy --project 5e74fae8-5b59-4f41-b778-f140ec224646 --service devbox
 While the box is stopped there is no container to exit, so the daily restart
 cannot revive it — `down` sticks until the next `redeploy`.
 
+## App dev on the personal box
+
+The personal box doubles as a cloud dev environment for Matt's own apps
+(all bun; the Expo ones build on EAS). What each layer owns:
+
+- **Control plane**: T3 mobile/web through the relay tunnel — unchanged.
+- **Data plane**: tailscale (userspace) on the box. Dev servers — Metro on
+  :8081, Vite, API servers — are reached at the box's tailnet IP from any
+  device on the tailnet. `expo start --tunnel` (ngrok) is the fallback for a
+  device that can't join the tailnet.
+- **Builds**: EAS only. The box never holds Apple/Android signing material —
+  that lives in EAS-managed credentials; build-time secrets live in `eas env`.
+  `EXPO_TOKEN` (an expo.dev personal access token) as a service variable keeps
+  `eas` commands non-interactive.
+- **Agent config**: `$HOME/agent-config` is a clone of the private
+  `mrmeg/agent-config` repo; the entrypoint pulls it and runs its `apply.sh`
+  on every start, so skills edited on the laptop reach the box by the next
+  restart (push from the laptop with the repo's `sync-from-laptop.sh`).
+
+One-time setup after the image lands:
+
+1. `tailscale up --ssh --hostname devbox` over `railway ssh` (the printed
+   auth URL enrolls the box; state persists on `/data/tailscale`).
+2. `railway variables --set "EXPO_TOKEN=<token from expo.dev/settings/access-tokens>"`.
+3. `gh repo clone mrmeg/agent-config "$HOME/agent-config"` on the box.
+
+Onboarding a project (on demand, not in bulk):
+
+1. `gh repo clone <repo>` under `/data`, add as a T3 project.
+2. Copy the runtime `.env` over, `bun i`.
+3. Expo apps: move signing to EAS-managed credentials (`eas credentials`),
+   build secrets to `eas env`, and configure `expo-updates` with a `preview`
+   channel.
+
+Testing tiers for Expo apps: Metro over tailnet/tunnel for interactive dev
+(dev client → `http://<tailnet-ip>:8081`), `eas update --channel preview` for
+fire-and-forget JS changes on any network, EAS build → TestFlight for native
+changes. Vite gotcha: reach it by tailnet IP, or add the MagicDNS name to
+`server.allowedHosts` — its host check rejects unknown hostnames.
+
 ## Operations
 
-- Update t3: nothing to do. `entrypoint.sh` runs `npm i -g t3@latest` on every
-  container start, so any restart or `railway redeploy` lands on the current
-  release. The Dockerfile's `t3@latest` only sets the fallback baked into the
-  image, and Docker caches that layer indefinitely — do not rely on it.
-- Logs: Railway deploy logs (serve writes to stdout).
+- Update t3 / provider CLIs / bun / eas: nothing to do. `entrypoint.sh`
+  reinstalls all of them on every container start, so any restart or
+  `railway redeploy` lands on current releases. The Dockerfile's versions only
+  set the fallback baked into the image, and Docker caches that layer
+  indefinitely — do not rely on it.
+- Logs: Railway deploy logs (serve writes to stdout). tailscaled logs to
+  `/data/tailscale/tailscaled.log`, truncated each boot.
 - Known gotcha: Cloudflare Bot Fight Mode challenges Railway egress IPs —
   keep it off on the zone (HOW-IT-WORKS.md debugging map).
