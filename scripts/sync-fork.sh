@@ -331,22 +331,49 @@ if [[ "$behind_count" -eq 0 ]]; then
   note "✓ Git: ${WORK_BRANCH} already current with upstream."
 else
   echo "→ Rebasing ${WORK_BRANCH} onto main (${behind_count} new upstream commits)..."
-  if ! git rebase main; then
-    cat <<'EOF'
+  # The rebase runs in a throwaway worktree that leaves .repos unchecked-out.
+  # Upstream renames vendored files there in ways that differ only by case
+  # (Sql/ → SQL/), and a checkout that has to pass through both spellings
+  # fails on this case-insensitive filesystem. Nothing on this branch touches
+  # .repos, so excluding it from the rebase worktree loses nothing.
+  REBASE_WT="$(mktemp -d)/rebase"
+  REBASE_BRANCH="sync-fork-rebase"
+  git branch -D "$REBASE_BRANCH" >/dev/null 2>&1 || true
+  git worktree add -q "$REBASE_WT" -b "$REBASE_BRANCH" "$WORK_BRANCH" --no-checkout
+  git -C "$REBASE_WT" sparse-checkout init --no-cone
+  git -C "$REBASE_WT" sparse-checkout set '/*' '!/.repos/'
+  git -C "$REBASE_WT" checkout -q "$REBASE_BRANCH"
+  if ! git -C "$REBASE_WT" -c core.hooksPath=/dev/null rebase main; then
+    cat <<EOF
 
 ✖ Rebase conflict. Your changes overlap with new upstream commits.
-  1. Fix the conflicted files listed above (usually apps/mobile/app.config.ts)
-  2. git add <files> && git rebase --continue
-  3. git push --force-with-lease origin mrmeg
-  4. Re-run this script to finish the desktop, mobile, devbox, and relay steps
-  Or bail out completely with: git rebase --abort
+  The rebase is paused in a separate worktree: ${REBASE_WT}
+  1. cd "${REBASE_WT}" and fix the conflicted files (git status)
+  2. git add <files> && GIT_EDITOR=true git rebase --continue   (repeat until done)
+  3. Back in this repo:
+       rm -rf .repos && git reset --hard ${REBASE_BRANCH}
+       git worktree remove --force "${REBASE_WT}" && git branch -D ${REBASE_BRANCH}
+  4. Re-run this script; it will push and finish the rollout steps
+  Or bail out with: git -C "${REBASE_WT}" rebase --abort; git worktree remove --force "${REBASE_WT}"; git branch -D ${REBASE_BRANCH}
 EOF
     exit 1
   fi
 
+  # Adopt the rebased history here. Dropping .repos first lets the reset lay
+  # down the new spelling without tripping over the old one.
+  rm -rf .repos
+  git reset -q --hard "$REBASE_BRANCH"
+  git worktree remove --force "$REBASE_WT"
+  git branch -q -D "$REBASE_BRANCH"
+  note "✓ Git: rebased ${WORK_BRANCH} onto ${behind_count} new upstream commits."
+fi
+
+# Push whenever the local branch differs from the fork, including a rebase that
+# was finished by hand after a conflict stopped a previous run.
+if [[ "$(git rev-parse "$WORK_BRANCH")" != "$(git rev-parse "origin/${WORK_BRANCH}" 2>/dev/null)" ]]; then
   echo "→ Pushing ${WORK_BRANCH} to fork..."
   git push --force-with-lease origin "$WORK_BRANCH"
-  note "✓ Git: rebased ${WORK_BRANCH} onto ${behind_count} new upstream commits and pushed."
+  note "✓ Git: pushed ${WORK_BRANCH} to origin."
 fi
 
 # ---------------------------------------------------------------------------

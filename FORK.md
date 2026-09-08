@@ -76,16 +76,35 @@ cannot run or a step needs doing alone.
 git fetch upstream
 git fetch . upstream/main:main        # fast-forward local main without checkout
 git push origin main:main
-git checkout mrmeg
-git rebase main
-git push --force-with-lease origin mrmeg
 ```
 
-On conflict: fix files (usually `apps/mobile/app.config.ts`), `git add`,
-`git rebase --continue`, push with `--force-with-lease`. Keep both upstream's
-change and the personal one when they overlap. If upstream now does what a
-personal commit did, drop that commit (`git rebase --skip` on it). Bail out
-with `git rebase --abort`.
+Rebase `mrmeg` in a throwaway worktree that leaves `.repos` unchecked-out.
+Upstream renames vendored files there in ways that differ only by case
+(`Sql/` vs `SQL/`), and a normal `git rebase` in this checkout fails with
+"untracked working tree files would be overwritten" on the case-insensitive
+Mac filesystem. Nothing on `mrmeg` touches `.repos`.
+
+```sh
+WT=$(mktemp -d)/rebase
+git worktree add "$WT" -b sync-fork-rebase mrmeg --no-checkout
+git -C "$WT" sparse-checkout init --no-cone
+git -C "$WT" sparse-checkout set '/*' '!/.repos/'
+git -C "$WT" checkout sync-fork-rebase
+git -C "$WT" -c core.hooksPath=/dev/null rebase main
+# on conflict: cd "$WT", fix, git add, GIT_EDITOR=true git rebase --continue; repeat
+rm -rf .repos && git reset --hard sync-fork-rebase      # adopt in the main checkout
+git worktree remove --force "$WT" && git branch -D sync-fork-rebase
+git push --force-with-lease origin mrmeg
+vp i
+```
+
+Conflict rules: keep both upstream's change and the personal one when they
+overlap (usually `apps/mobile/app.config.ts`, the `gh --json` field lists in
+`apps/server/src/sourceControl`, `infra/relay/src/db.ts`). For `pnpm-lock.yaml`
+take upstream's copy (`git checkout --ours pnpm-lock.yaml`) and run
+`pnpm install --lockfile-only --ignore-scripts` to fold the fork's deps back in.
+If upstream now does what a personal commit did, drop that commit
+(`git rebase --skip`). Bail out with `git -C "$WT" rebase --abort`.
 
 ### 5.2 Desktop app (macOS, arm64)
 
