@@ -157,7 +157,9 @@ mobile_precheck() {
   fi
   local expected actual
   expected="$(env_local_get T3CODE_EXPO_OWNER)"
-  actual="$(eas whoami 2>/dev/null | grep -vE 'eas-cli@|upgrade|^\s*$' | tail -1 | sed -E 's/^[^A-Za-z0-9_-]*//; s/ .*$//')"
+  # First stdout line is the signed-in user; the "Accounts:" list that follows
+  # names every organization the user belongs to, which is not the login.
+  actual="$(eas whoami 2>/dev/null | head -1 | tr -d '[:space:]')"
   if [[ -z "$actual" ]]; then
     MOBILE_SKIP_REASON="eas is not logged in (run 'eas login' or set EXPO_TOKEN)"
     return 1
