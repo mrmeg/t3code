@@ -142,7 +142,10 @@ update_desktop_app() {
 }
 
 fork_app_running() {
-  ps -axo command= | grep -F -q -- "${APP_PATH}/Contents/MacOS/"
+  # No `grep -q`: it exits on first match, and the SIGPIPE that kills `ps`
+  # makes the pipeline fail under `set -o pipefail`, reporting "not running"
+  # for an app that is running.
+  [[ -n "$(ps -axo command= | grep -F -- "${APP_PATH}/Contents/MacOS/")" ]]
 }
 
 # ---------------------------------------------------------------------------
@@ -230,12 +233,24 @@ install_ios() {
     return 0
   fi
   echo "→ Installing ${sha} on ${name}..."
-  if xcrun devicectl device install app --device "$udid" --timeout 600 "$artifact"; then
+  local log
+  log="$(mktemp)"
+  if xcrun devicectl device install app --device "$udid" --timeout 600 "$artifact" 2>&1 | tee "$log"; then
+    rm -f "$log"
     state_set "$key" "$sha"
     note "✓ iOS ${name}: installed ${sha}."
-  else
-    note "✖ iOS ${name}: install failed (not in the ad-hoc profile? 'eas device:create', then delete the artifact and rerun)."
+    return 0
   fi
+  # devicectl reports several very different problems the same way, so name the
+  # one that actually happened instead of guessing at provisioning every time.
+  if grep -q -e "still locked" -e "not been unlocked" "$log"; then
+    note "⚠ iOS ${name}: locked; unlock the screen and rerun."
+  elif grep -q -e "ineligible" -e "provisioning" -e "not.*eligible" "$log"; then
+    note "✖ iOS ${name}: not in the ad-hoc profile; run 'eas device:create', delete the ipa in apps/mobile/build/, and rerun."
+  else
+    note "✖ iOS ${name}: install failed; see the devicectl output above."
+  fi
+  rm -f "$log"
 }
 
 install_android() {
