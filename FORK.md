@@ -230,8 +230,9 @@ Scan or paste into the mobile app's Add environment. Full options:
 - **Official mobile app shows no environments.** The environment is linked to
   relay.mrmeg.com. Either use the fork mobile build, or relink to the official
   relay (§5.6).
-- **`eas` logged in as the wrong account.** Client work leaves it on
-  `alynnblanco`. `eas login` as `mrmeg`, or export `EXPO_TOKEN`.
+- **`eas` logged in as the wrong account.** The first line of `eas whoami` is
+  the user; the Accounts list below it is not. `eas login` as `mrmeg`, or
+  export `EXPO_TOKEN`.
 - **Desktop build fails.** `pnpm install` first; check `release/builder-debug.yml`.
 - **Relay deploy fails on Cloudflare bot challenge.** Bot Fight Mode must stay
   off on the zone (`HOW-IT-WORKS.md` debugging map).
