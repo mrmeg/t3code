@@ -124,19 +124,25 @@ update_desktop_app() {
     [[ -n "$pid" ]] || break
   done
 
-  # Match the fork bundle by its exact path: the official build shares the
-  # same bundle id and a near-identical name.
-  local running_pattern="^${APP_PATH}/Contents/MacOS/"
-  if pgrep -qf "$running_pattern"; then
+  # Match the fork bundle by its exact path as a fixed string: the official
+  # build shares the same bundle id and a near-identical name, and the
+  # parentheses in the path would be regex groups to pgrep.
+  if fork_app_running; then
     echo "→ Restarting ${APP_NAME}..."
     osascript -e "tell application \"${APP_PATH}\" to quit" || true
     for _ in $(seq 1 20); do
-      pgrep -qf "$running_pattern" || break
+      fork_app_running || break
       sleep 0.5
     done
     open "$APP_PATH"
+    note "✓ Desktop: updated to ${version} and restarted."
+  else
+    note "✓ Desktop: updated to ${version} (was not running)."
   fi
-  note "✓ Desktop: updated to ${version}."
+}
+
+fork_app_running() {
+  ps -axo command= | grep -F -q -- "${APP_PATH}/Contents/MacOS/"
 }
 
 # ---------------------------------------------------------------------------
