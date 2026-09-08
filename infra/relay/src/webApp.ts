@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - Resolves the repo root from import.meta.url at deploy time; no Effect runtime is involved.
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
