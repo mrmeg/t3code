@@ -78,8 +78,8 @@ reinstall, or delete an artifact to force a rebuild.
   (`com.t3tools.t3code`), so a Play Store install of T3 Code on the phone
   blocks the fork APK (same id, different signing key). The script detects
   this and reports it; Matt must uninstall the store app for the fork to land.
-- **eas account.** If the summary says eas is logged in as someone else
-  (client work often leaves it on `alynnblanco`), tell Matt to `eas login` as
+- **eas account.** If the summary says eas is logged in as someone else,
+  tell Matt to `eas login` as
   `mrmeg` or export `EXPO_TOKEN`, then rerun — everything else already landed.
 - **New device.** An iOS install failure on a freshly added UDID usually means
   it is not in the ad-hoc provisioning profile: `eas device:create`, delete the
