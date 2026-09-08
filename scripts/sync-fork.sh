@@ -1,32 +1,95 @@
 #!/usr/bin/env bash
 # Personal fork maintenance (mrmeg): pull latest pingdotgg/t3code into main,
-# rebase the mrmeg branch on top, and push both to the fork.
+# rebase the mrmeg branch on top, push both to the fork, then roll the result
+# out everywhere it runs: the installed desktop app, the phones and tablets
+# listed in .env.local, the Railway devboxes, and the relay stack.
 #
-# Safe to run any time from anywhere in the repo:
+# Safe to run any time from anywhere in the repo, unattended:
 #   ./scripts/sync-fork.sh
 #
-# If the rebase hits a conflict, the script stops and tells you what to do.
+# Only the git steps are fatal. Every rollout step records its outcome and the
+# script ends with a summary so a single glance shows what landed, what was
+# skipped, and which devices were not reachable.
+#
+# Device targets live in .env.local (gitignored):
+#   SYNC_FORK_IOS_UDIDS="<udid> <udid> ..."        # xcrun devicectl list devices
+#   SYNC_FORK_ANDROID_SERIALS="<serial> ..."       # adb devices -l (substring match)
+# Unset means: the primary iPhone for iOS, every attached adb device for Android.
 set -euo pipefail
 
 WORK_BRANCH="mrmeg"
 APP_NAME="T3 Code (Alpha)"
 APP_PATH="/Applications/${APP_NAME}.app"
+ANDROID_PACKAGE="com.t3tools.t3code"
+DEFAULT_IOS_UDIDS="00008110-000248D111F1801E"
 cd "$(git rev-parse --show-toplevel)"
+REPO_ROOT="$PWD"
+STATE_FILE="${REPO_ROOT}/.t3/sync-fork.state"
+MOBILE_DIR="${REPO_ROOT}/apps/mobile"
+MOBILE_BUILD_DIR="${MOBILE_DIR}/build"
+# Paths whose changes require a rebuild of each artifact.
+DESKTOP_PATHS=(apps/desktop apps/web apps/server packages pnpm-lock.yaml)
+MOBILE_PATHS=(apps/mobile packages pnpm-lock.yaml)
 
-# Rebuild and reinstall the desktop app if the installed bundle no longer
-# matches the version in the repo.
+SUMMARY=()
+note() {
+  SUMMARY+=("$1")
+  echo "$1"
+}
+
+# ---------------------------------------------------------------------------
+# Small helpers
+# ---------------------------------------------------------------------------
+
+# Key=value state of what was last built and where it was installed, so reruns
+# skip work that already landed and only touch devices that are behind.
+state_get() {
+  [[ -f "$STATE_FILE" ]] || return 0
+  grep -E "^$1=" "$STATE_FILE" | tail -1 | cut -d= -f2- || true
+}
+state_set() {
+  mkdir -p "$(dirname "$STATE_FILE")"
+  {
+    [[ -f "$STATE_FILE" ]] && { grep -vE "^$1=" "$STATE_FILE" || true; }
+    echo "$1=$2"
+  } >"${STATE_FILE}.tmp"
+  mv "${STATE_FILE}.tmp" "$STATE_FILE"
+}
+
+env_local_get() {
+  [[ -f .env.local ]] || return 0
+  grep -E "^$1=" .env.local | tail -1 | cut -d= -f2- | sed -E 's/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/' || true
+}
+
+# True when the given paths differ between a recorded commit and HEAD, or when
+# there is no usable recorded commit at all.
+changed_since() {
+  local sha="$1"
+  shift
+  [[ -n "$sha" ]] && git cat-file -e "$sha" 2>/dev/null || return 0
+  ! git diff --quiet "$sha" HEAD -- "$@"
+}
+
+# ---------------------------------------------------------------------------
+# Desktop
+# ---------------------------------------------------------------------------
+
+# Rebuild and reinstall the desktop app when the installed bundle is behind the
+# repo, either by version or because desktop-facing code changed since the
+# last build.
 update_desktop_app() {
   [[ "$(uname)" == "Darwin" ]] || return 0
 
-  local version installed
+  local version installed last
   version="$(node -p "require('./apps/desktop/package.json').version")"
   installed="$(defaults read "${APP_PATH}/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo "none")"
-  if [[ "$installed" == "$version" ]]; then
-    echo "✓ Desktop app already at ${version}."
+  last="$(state_get desktop_built)"
+  if [[ "$installed" == "$version" ]] && ! changed_since "$last" "${DESKTOP_PATHS[@]}"; then
+    note "✓ Desktop: already current (${version})."
     return 0
   fi
 
-  echo "→ Rebuilding desktop app (installed ${installed} → ${version})..."
+  echo "→ Rebuilding desktop app (installed ${installed} → ${version} @ $(git rev-parse --short HEAD))..."
   pnpm install || return 1
   pnpm dist:desktop:dmg:arm64 || return 1
 
@@ -46,6 +109,7 @@ update_desktop_app() {
   rm -rf "$APP_PATH"
   mv "${staging}/${APP_NAME}.app" "$APP_PATH"
   rm -rf "$staging"
+  state_set desktop_built "$(git rev-parse HEAD)"
 
   # If this script is itself running inside the app (a T3 terminal), quitting
   # the app would kill the sync — leave the restart to the user in that case.
@@ -53,25 +117,187 @@ update_desktop_app() {
   while [[ "$pid" -gt 1 ]]; do
     cmd="$(ps -o command= -p "$pid" 2>/dev/null || true)"
     if [[ "$cmd" == *"${APP_NAME}.app"* ]]; then
-      echo "⚠ Running inside ${APP_NAME}; restart it yourself to pick up ${version}."
+      note "⚠ Desktop: ${version} installed; restart ${APP_NAME} yourself (sync ran inside it)."
       return 0
     fi
     pid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ' || echo 1)"
     [[ -n "$pid" ]] || break
   done
 
-  local pgrep_pattern="T3 Code .Alpha..app/Contents/MacOS"
-  if pgrep -qf "$pgrep_pattern"; then
+  # Match the fork bundle by its exact path: the official build shares the
+  # same bundle id and a near-identical name.
+  local running_pattern="^${APP_PATH}/Contents/MacOS/"
+  if pgrep -qf "$running_pattern"; then
     echo "→ Restarting ${APP_NAME}..."
-    osascript -e "tell application \"${APP_NAME}\" to quit" || true
+    osascript -e "tell application \"${APP_PATH}\" to quit" || true
     for _ in $(seq 1 20); do
-      pgrep -qf "$pgrep_pattern" || break
+      pgrep -qf "$running_pattern" || break
       sleep 0.5
     done
     open "$APP_PATH"
   fi
-  echo "✓ Desktop app updated to ${version}."
+  note "✓ Desktop: updated to ${version}."
 }
+
+# ---------------------------------------------------------------------------
+# Mobile
+# ---------------------------------------------------------------------------
+
+MOBILE_SKIP_REASON=""
+mobile_precheck() {
+  if ! command -v eas >/dev/null 2>&1; then
+    MOBILE_SKIP_REASON="eas-cli not installed"
+    return 1
+  fi
+  local expected actual
+  expected="$(env_local_get T3CODE_EXPO_OWNER)"
+  actual="$(eas whoami 2>/dev/null | grep -vE 'eas-cli@|upgrade|^\s*$' | tail -1 | sed -E 's/^[^A-Za-z0-9_-]*//; s/ .*$//')"
+  if [[ -z "$actual" ]]; then
+    MOBILE_SKIP_REASON="eas is not logged in (run 'eas login' or set EXPO_TOKEN)"
+    return 1
+  fi
+  if [[ -n "$expected" && "$actual" != "$expected" ]]; then
+    MOBILE_SKIP_REASON="eas is logged in as '${actual}', expected '${expected}' (run 'eas login' or set EXPO_TOKEN)"
+    return 1
+  fi
+  return 0
+}
+
+# Builds the release device artifact for one platform unless the current or a
+# still-valid earlier one exists. Sets MOBILE_ARTIFACT to the path on success.
+MOBILE_ARTIFACT=""
+build_mobile() {
+  local platform="$1" ext="$2"
+  local sha last artifact
+  sha="$(git rev-parse --short=9 HEAD)"
+  artifact="${MOBILE_BUILD_DIR}/T3Code-release-device-${sha}.${ext}"
+  MOBILE_ARTIFACT=""
+
+  if [[ -f "$artifact" ]]; then
+    echo "✓ Mobile ${platform}: artifact for ${sha} already built."
+    MOBILE_ARTIFACT="$artifact"
+    return 0
+  fi
+  last="$(state_get "mobile_${platform}_built")"
+  if [[ -n "$last" && -f "${MOBILE_BUILD_DIR}/T3Code-release-device-${last}.${ext}" ]] \
+    && ! changed_since "$last" "${MOBILE_PATHS[@]}"; then
+    echo "✓ Mobile ${platform}: no mobile changes since ${last}; reusing that build."
+    MOBILE_ARTIFACT="${MOBILE_BUILD_DIR}/T3Code-release-device-${last}.${ext}"
+    return 0
+  fi
+
+  echo "→ Building ${platform} release device artifact (${sha})..."
+  mkdir -p "$MOBILE_BUILD_DIR"
+  if (cd "$MOBILE_DIR" && eas build --profile production:device -p "$platform" --local --non-interactive --output "$artifact"); then
+    state_set "mobile_${platform}_built" "$sha"
+    MOBILE_ARTIFACT="$artifact"
+    return 0
+  fi
+  return 1
+}
+
+artifact_sha() {
+  local base
+  base="$(basename "$1")"
+  base="${base#T3Code-release-device-}"
+  echo "${base%.*}"
+}
+
+install_ios() {
+  local udid="$1" artifact="$2"
+  local sha key name details
+  sha="$(artifact_sha "$artifact")"
+  key="device_${udid}"
+  details="$(mktemp)"
+  if ! xcrun devicectl device info details --device "$udid" --timeout 20 --json-output "$details" >/dev/null 2>&1; then
+    rm -f "$details"
+    note "⚠ iOS ${udid}: not reachable (off, asleep, or not on this network); skipped."
+    return 0
+  fi
+  name="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['result']['deviceProperties']['name'])" "$details" 2>/dev/null || echo "$udid")"
+  rm -f "$details"
+
+  if [[ "$(state_get "$key")" == "$sha" ]]; then
+    note "✓ iOS ${name}: already at ${sha}."
+    return 0
+  fi
+  echo "→ Installing ${sha} on ${name}..."
+  if xcrun devicectl device install app --device "$udid" --timeout 600 "$artifact"; then
+    state_set "$key" "$sha"
+    note "✓ iOS ${name}: installed ${sha}."
+  else
+    note "✖ iOS ${name}: install failed (not in the ad-hoc profile? 'eas device:create', then delete the artifact and rerun)."
+  fi
+}
+
+install_android() {
+  local match="$1" artifact="$2"
+  local sha key serial installer
+  sha="$(artifact_sha "$artifact")"
+  key="device_${match}"
+  serial="$(adb devices -l 2>/dev/null | awk -v m="$match" 'NR>1 && index($1,m)>0 && $2=="device" {print $1; exit}')"
+  if [[ -z "$serial" ]]; then
+    note "⚠ Android ${match}: not connected to adb; skipped."
+    return 0
+  fi
+
+  if [[ "$(state_get "$key")" == "$sha" ]]; then
+    note "✓ Android ${match}: already at ${sha}."
+    return 0
+  fi
+  # The fork keeps upstream's Android package id, so a Play Store install of
+  # T3 Code blocks it: same id, different signing key.
+  installer="$(adb -s "$serial" shell dumpsys package "$ANDROID_PACKAGE" 2>/dev/null | awk -F= '/installerPackageName/ {print $2; exit}' | tr -d '\r ')"
+  if [[ "$installer" == "com.android.vending" ]]; then
+    note "✖ Android ${match}: Play Store T3 Code is installed under ${ANDROID_PACKAGE}; uninstall it before the fork build can install."
+    return 0
+  fi
+  echo "→ Installing ${sha} on ${serial}..."
+  if adb -s "$serial" install -r "$artifact"; then
+    state_set "$key" "$sha"
+    note "✓ Android ${match}: installed ${sha}."
+  else
+    note "✖ Android ${match}: adb install failed."
+  fi
+}
+
+update_mobile() {
+  local ios_udids android_serials
+  ios_udids="$(env_local_get SYNC_FORK_IOS_UDIDS)"
+  android_serials="$(env_local_get SYNC_FORK_ANDROID_SERIALS)"
+  [[ -n "$ios_udids" ]] || ios_udids="$DEFAULT_IOS_UDIDS"
+  [[ "$(uname)" == "Darwin" ]] || ios_udids=""
+  if [[ -z "$android_serials" ]] && command -v adb >/dev/null 2>&1; then
+    android_serials="$(adb devices 2>/dev/null | awk 'NR>1 && $2=="device" {print $1}' | tr '\n' ' ')"
+  fi
+
+  if ! mobile_precheck; then
+    note "⚠ Mobile: skipped (${MOBILE_SKIP_REASON})."
+    return 0
+  fi
+
+  if [[ -n "$ios_udids" ]]; then
+    if build_mobile ios ipa; then
+      for udid in $ios_udids; do install_ios "$udid" "$MOBILE_ARTIFACT"; done
+    else
+      note "✖ Mobile iOS: build failed; run 'pnpm --filter @t3tools/mobile ios:release:device' to see why."
+    fi
+  fi
+
+  if [[ -n "$android_serials" ]]; then
+    if build_mobile android apk; then
+      for serial in $android_serials; do install_android "$serial" "$MOBILE_ARTIFACT"; done
+    else
+      note "✖ Mobile Android: build failed; run 'eas build --profile production:device -p android --local' in apps/mobile to see why."
+    fi
+  elif command -v adb >/dev/null 2>&1; then
+    note "⚠ Android: no devices attached to adb; skipped."
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Git sync (fatal on failure)
+# ---------------------------------------------------------------------------
 
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "✖ Working tree has uncommitted changes. Commit or stash them first:"
@@ -102,6 +328,7 @@ git checkout "$WORK_BRANCH"
 behind_count="$(git rev-list --count "${WORK_BRANCH}..main")"
 if [[ "$behind_count" -eq 0 ]]; then
   echo "✓ ${WORK_BRANCH} is already up to date with upstream."
+  note "✓ Git: ${WORK_BRANCH} already current with upstream."
 else
   echo "→ Rebasing ${WORK_BRANCH} onto main (${behind_count} new upstream commits)..."
   if ! git rebase main; then
@@ -111,7 +338,7 @@ else
   1. Fix the conflicted files listed above (usually apps/mobile/app.config.ts)
   2. git add <files> && git rebase --continue
   3. git push --force-with-lease origin mrmeg
-  4. Re-run this script to finish the desktop, devbox, and relay steps
+  4. Re-run this script to finish the desktop, mobile, devbox, and relay steps
   Or bail out completely with: git rebase --abort
 EOF
     exit 1
@@ -119,52 +346,54 @@ EOF
 
   echo "→ Pushing ${WORK_BRANCH} to fork..."
   git push --force-with-lease origin "$WORK_BRANCH"
-
-  echo "✓ Done. main mirrors upstream, ${WORK_BRANCH} is rebased and pushed."
+  note "✓ Git: rebased ${WORK_BRANCH} onto ${behind_count} new upstream commits and pushed."
 fi
 
+# ---------------------------------------------------------------------------
+# Rollout (each step non-fatal; outcomes collected in the summary)
+# ---------------------------------------------------------------------------
 # Everything below runs even when the branch was already up to date: a previous
-# sync may have stopped on a conflict before reaching it, and the devbox and
+# sync may have stopped on a conflict before reaching it, and the devboxes and
 # relay drift on their own schedule regardless of what upstream did.
 
-# Keep the installed desktop app in step with the freshly synced source.
-# Non-fatal: the fork sync already succeeded.
-update_desktop_app || echo "⚠ Desktop app update failed; run 'pnpm dist:desktop:dmg:arm64' manually."
+update_desktop_app || note "✖ Desktop: rebuild failed; run 'pnpm dist:desktop:dmg:arm64' manually."
 
-# The Railway devbox runs the published npm package (not this repo), so pull
-# its update alongside the fork sync. Non-fatal: the fork sync already succeeded.
+update_mobile
+
+# The Railway devboxes run the published npm package (not this repo), so pull
+# their update alongside the fork sync.
 echo "→ Updating t3 on the Railway devbox..."
 if railway ssh \
     --project 5e74fae8-5b59-4f41-b778-f140ec224646 \
     --environment dd05b42d-9f69-4165-ac94-40311d2e70eb \
     --service 0b64c47f-67e1-4362-9023-99171319c376 \
     -- npm i -g t3@latest; then
-  echo "✓ Devbox t3 updated to latest."
+  note "✓ Devbox (mrmeg): t3 updated to latest."
 else
-  echo "⚠ Devbox update failed (offline or CLI not logged in?). Run manually:"
-  echo "  railway ssh -- npm i -g t3@latest"
+  note "⚠ Devbox (mrmeg): update failed (stopped, offline, or railway not logged in); run 'railway ssh -- npm i -g t3@latest'."
 fi
 
-# The client devbox (neurospicyos, Alynn's workspace) also runs the published
-# package; bump it in place alongside. Non-fatal.
 echo "→ Updating t3 on the neurospicyos devbox..."
 if railway ssh \
     --project a334dbf3-e0b1-4108-b953-51dfc06f6802 \
     --environment 972de3b3-54b5-4689-8406-5c83ce04355d \
     --service 6da7bde1-e7bb-4f12-b4be-136d882deeec \
     -- npm i -g t3@latest; then
-  echo "✓ neurospicyos devbox t3 updated."
+  note "✓ Devbox (neurospicyos): t3 updated to latest."
 else
-  echo "⚠ neurospicyos devbox update failed. Run manually from infra/devbox (linked)."
+  note "⚠ Devbox (neurospicyos): update failed; run it manually from infra/devbox (linked)."
 fi
 
 # Keep the deployed relay + hosted web app (relay.mrmeg.com / code.mrmeg.com)
 # in step with the rebased branch. Alchemy memoizes the web build, so this is
-# cheap when nothing web-facing changed. Non-fatal: the sync already succeeded.
+# cheap when nothing web-facing changed.
 echo "→ Deploying relay + hosted web app..."
 if vp run --filter t3code-relay deploy --stage prod --yes; then
-  echo "✓ Relay stack deployed (relay.mrmeg.com, code.mrmeg.com)."
+  note "✓ Relay: deployed (relay.mrmeg.com, code.mrmeg.com)."
 else
-  echo "⚠ Relay deploy failed; run manually:"
-  echo "  vp run --filter t3code-relay deploy --stage prod --yes"
+  note "⚠ Relay: deploy failed; run 'vp run --filter t3code-relay deploy --stage prod --yes'."
 fi
+
+echo
+echo "═══ sync-fork summary ($(git rev-parse --short HEAD) on ${WORK_BRANCH})"
+printf '%s\n' "${SUMMARY[@]}"
