@@ -29,7 +29,9 @@ with a `═══ sync-fork summary` block. What it rolls out:
   (`mrmeg`) or `EXPO_TOKEN` set; otherwise the whole mobile step is skipped
   with the reason in the summary.
 - **Devboxes** — Matt's `devbox` and the client's `neurospicyos-devbox` run the
-  published `t3` npm package; updated via `railway ssh -- npm i -g t3@latest`.
+  published `t3` npm package. `railway ssh -- devbox-refresh` stages the latest
+  t3 + provider CLI release on each; it activates at the box's next restart
+  (daily on Matt's box, `scripts/devbox.sh --box client up` on the client box).
 - **Relay** — `vp run --filter t3code-relay deploy --stage prod --yes` so
   relay.mrmeg.com and code.mrmeg.com serve the rebased branch (web build is
   memoized; cheap when nothing web-facing changed).
