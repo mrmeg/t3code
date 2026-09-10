@@ -44,14 +44,14 @@ railway redeploy   # first `up` may predate the volume attach; redeploy mounts i
 
 Service variables and why each exists:
 
-| Variable                  | Purpose                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `T3CODE_*` (four)         | Optional. Point the published `t3` at relay.mrmeg.com instead of official T3 Connect (Matt's box has them; client boxes normally do not). |
-| `SHELL=/usr/bin/zsh`      | T3 terminals spawn `$SHELL`. The entrypoint creates an empty `.zshrc` if missing so zsh skips its first-run wizard. |
-| `IS_SANDBOX=1`            | Claude Code refuses full-access (bypass) mode as root without it; the container runs as root.                      |
-| `EXPO_TOKEN`              | expo.dev access token so `eas build`, `eas update` and `expo start --tunnel` run non-interactively. Matt's box uses a personal token; a client box gets a token for a publish-only robot on the client's Expo account (e.g. `neurospicyos-devbox`), never Matt's. |
-| `TRIFORCE_ROLE=pxa`       | Client boxes only. Read by the client project's governance hooks and skills; unset means unrestricted (Matt).        |
-| `DEVBOX_RESTART_AT_UTC`   | Matt's box only: daily restart that also activates the staged CLI release.                                         |
+| Variable                | Purpose                                                                                                                                                                                                                                                           |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `T3CODE_*` (four)       | Optional. Point the published `t3` at relay.mrmeg.com instead of official T3 Connect (Matt's box has them; client boxes normally do not).                                                                                                                         |
+| `SHELL=/usr/bin/zsh`    | T3 terminals spawn `$SHELL`. The entrypoint creates an empty `.zshrc` if missing so zsh skips its first-run wizard.                                                                                                                                               |
+| `IS_SANDBOX=1`          | Claude Code refuses full-access (bypass) mode as root without it; the container runs as root.                                                                                                                                                                     |
+| `EXPO_TOKEN`            | expo.dev access token so `eas build`, `eas update` and `expo start --tunnel` run non-interactively. Matt's box uses a personal token; a client box gets a token for a publish-only robot on the client's Expo account (e.g. `neurospicyos-devbox`), never Matt's. |
+| `TRIFORCE_ROLE=pxa`     | Client boxes only. Read by the client project's governance hooks and skills; unset means unrestricted (Matt).                                                                                                                                                     |
+| `DEVBOX_RESTART_AT_UTC` | Matt's box only: daily restart that also activates the staged CLI release.                                                                                                                                                                                        |
 
 Set a variable later with `railway variables --set NAME=value --skip-deploys`,
 then `scripts/devbox.sh up`: variables are baked into a deployment, and
@@ -132,6 +132,14 @@ The personal box doubles as a cloud dev environment for Matt's own apps
   `mrmeg/agent-config` repo; the entrypoint pulls it and runs its `apply.sh`
   on every start, so skills edited on the laptop reach the box by the next
   restart (push from the laptop with the repo's `sync-from-laptop.sh`).
+- **Editor**: Zed (or VS Code Remote-SSH) over Tailscale SSH, so the box holds
+  the only checkout and nothing needs syncing with the laptop. The laptop's
+  `~/.ssh/config` aliases `railway-devbox` to the box's MagicDNS name
+  (`devbox.tail02c842.ts.net`; it changes if the tailnet hostname does), and
+  Zed's `ssh_connections` lists that alias. `zed ssh://railway-devbox/data/work/<repo>`
+  opens a project; Zed installs its server into `/data/home/.zed_server`, which
+  persists. The image rewrites root's passwd entry to `/data/home` + zsh
+  because Tailscale SSH sessions start from passwd, not the image ENV.
 
 One-time setup after the image lands:
 
@@ -139,6 +147,58 @@ One-time setup after the image lands:
    auth URL enrolls the box; state persists on `/data/tailscale`).
 2. `railway variables --set "EXPO_TOKEN=<token from expo.dev/settings/access-tokens>"`.
 3. `gh repo clone mrmeg/agent-config "$HOME/agent-config"` on the box.
+
+## Toolchain
+
+An agent on the box has to find the same CLIs the same skills use on the laptop;
+a missing one reads as a broken skill rather than a missing install. Three places
+own a tool, and which one depends only on how it is packaged:
+
+| Where                          | What                                                                                                     | Persistence                                                         |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `devbox-refresh.sh` (npm)      | t3, codex, claude, bun, pnpm, eas, ngrok, railway, supabase, stripe, clerk, sentry-cli, wrangler, vercel | `/data/cli/current` on the volume, restaged daily, promoted at boot |
+| `Dockerfile` (apt + installer) | git, gh, tailscale, zsh, tini, ripgrep, fd, jq, less, tmux, uv, node/npm                                 | image only — apt installs do not survive a redeploy                 |
+| `$HOME/.local/bin`             | aws, `claude-bedrock` wrapper                                                                            | volume, installed by hand                                           |
+
+Add an npm-packaged CLI to **both** `devbox-refresh.sh` and the `npm i -g` in the
+Dockerfile: the first is the live set, the second is what a fresh volume falls
+back to. Anything else goes in the Dockerfile and needs a rebuild (`up`, or a
+push that touches `infra/devbox/**`).
+
+Not installed on purpose: argent and maestro (they drive simulators and physical
+devices, which a Railway container has none of) and docker.
+
+`/etc/devbox-env.sh` is the one environment definition, wired into `/etc/zsh/zshenv`
+(all zsh), `/etc/profile.d/devbox.sh` (login shells) and `$BASH_ENV`
+(non-interactive bash). It puts `/data/cli/current/bin` and `$HOME/.local/bin` on
+PATH and sources the credential file below. A PATH entry that lives only in
+`~/.zshrc` is invisible to non-interactive shells — which is the shape an agent's
+Bash tool runs in — so it belongs here instead.
+
+## Credentials
+
+Two mechanisms, chosen by what the CLI supports:
+
+- **Its own login state**, for anything with a headless flow: `gh auth login`,
+  `railway login --browserless`, `supabase login --token`, `stripe login
+--interactive`, `clerk login`, `vercel login`, `eas` (via `EXPO_TOKEN`). All of
+  them write under `$HOME`, which is on the volume, so one login survives every
+  redeploy. Revoke per-device from the vendor's dashboard.
+- **A service variable**, for token-only CLIs and anything an agent reads from
+  the environment: `SENTRY_AUTH_TOKEN`, `CLOUDFLARE_API_TOKEN`,
+  `CLOUDFLARE_ACCOUNT_ID`, `EXPO_TOKEN`, `AWS_BEARER_TOKEN_BEDROCK`. Set them
+  with `railway variables --set NAME=value --skip-deploys`, then `up`.
+
+Railway variables reach PID 1, so `t3 serve` and the agents it spawns have them,
+but a Tailscale SSH session starts from `/etc/passwd` with a clean environment and
+does not. `entrypoint.sh` therefore mirrors an allowlist of names into
+`$HOME/.config/devbox/env` (0600), which `/etc/devbox-env.sh` sources — so the
+same credential is present through T3, Zed, and plain ssh alike. The file is
+rewritten every boot: change the service variable, never the file. Adding a new
+token means adding its name to that allowlist.
+
+`scripts/devbox.sh audit` reports which credentials are present without printing
+any of them.
 
 Onboarding a project (on demand, not in bulk):
 
@@ -156,8 +216,9 @@ changes. Vite gotcha: reach it by tailnet IP, or add the MagicDNS name to
 
 ## Operations
 
-- Update t3 / provider CLIs / bun / eas: restart the box. The image bakes them
-  only as a fallback; the live set is `/data/cli/current` on the volume.
+- Update t3 / provider CLIs / bun / pnpm / eas / the service CLIs: restart the
+  box. The image bakes them only as a fallback; the live set is
+  `/data/cli/current` on the volume.
   `devbox-refresh` runs a minute after every boot and then daily (or on demand:
   `scripts/devbox.sh refresh`), installing the latest releases into
   `/data/cli/next`, and `entrypoint.sh` promotes that to `current` on the next

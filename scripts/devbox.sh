@@ -154,7 +154,7 @@ cmd_status() {
   box_ssh sh -c '
     printf "boot: t3 serve up %s\n" "$(ps -o etime= -p "$(pgrep -f "t3 serve" | head -1)" 2>/dev/null | tr -d " " || echo "not running")"
     printf "cli:  %s\n" "$(readlink /data/cli/current 2>/dev/null || echo image-baked)"
-    for b in t3 claude codex bun eas; do printf "  %-7s %s\n" "$b" "$($b --version 2>/dev/null | head -1 || echo MISSING)"; done
+    for b in t3 claude codex bun eas railway supabase stripe clerk sentry-cli wrangler vercel; do printf "  %-10s %s\n" "$b" "$($b --version 2>/dev/null | head -1 || echo MISSING)"; done
     [ -f /data/cli/next/.complete ] && printf "staged: %s\n" "$(tr "\n" " " < /data/cli/next/.versions)"
     t3 connect status --base-dir /data/t3code 2>/dev/null | sed -n "2,4p"
   ' || echo "(box not reachable over ssh)"
@@ -163,9 +163,22 @@ cmd_status() {
 cmd_audit() {
   box_ssh sh -c '
     echo "== host"; nproc; free -m | sed -n 2p; df -h /data | tail -1; echo "uid=$(id -u) HOME=$HOME SHELL=$SHELL"
-    echo "== versions"; for c in node npm t3 claude codex bun eas gh git tailscale; do printf "%-10s %s\n" "$c" "$($c --version 2>/dev/null | head -1 || echo MISSING)"; done
+    echo "== versions"; for c in node npm pnpm t3 claude codex bun eas gh git tailscale rg jq fd uv aws railway supabase stripe clerk sentry-cli wrangler vercel; do printf "%-10s %s\n" "$c" "$($c --version 2>/dev/null | head -1 || echo MISSING)"; done
     echo "== cli releases"; ls -1 /data/cli/releases 2>/dev/null; echo "current -> $(readlink /data/cli/current 2>/dev/null)"; tail -3 /data/cli/refresh.log 2>/dev/null
-    echo "== auth"; eas whoami 2>&1 | head -1; gh auth status 2>&1 | grep -E "Logged in|not logged" | head -1
+    # Never print a credential, only whether one is there: an identity from the
+    # CLIs that can answer offline, a file for the ones whose check costs a
+    # network round trip, and set/unset for the token-only ones.
+    echo "== auth"
+    printf "%-10s %s\n" gh "$(gh auth status 2>&1 | grep -E "Logged in|not logged" | head -1 | sed "s/^ *//")"
+    printf "%-10s %s\n" eas "$(eas whoami 2>&1 | head -1)"
+    printf "%-10s %s\n" railway "$(railway whoami 2>&1 | head -1)"
+    printf "%-10s %s\n" vercel "$(vercel whoami 2>&1 | tail -1)"
+    for pair in "supabase:$HOME/.supabase/access-token" "stripe:$HOME/.config/stripe/config.toml" "clerk:$HOME/.clerk/config.json"; do
+      printf "%-10s %s\n" "${pair%%:*}" "$([ -s "${pair#*:}" ] && echo "credential on volume" || echo "no credential")"
+    done
+    for name in SENTRY_AUTH_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID EXPO_TOKEN AWS_BEARER_TOKEN_BEDROCK; do
+      printf "%-10s %s\n" "${name%%_*}" "$(grep -q "^export $name=" "$HOME/.config/devbox/env" 2>/dev/null && echo "$name set" || echo "$name unset")"
+    done
     echo "== connect"; t3 connect status --base-dir /data/t3code 2>&1 | sed -n "2,5p"
     echo "== tailscale"; tailscale --socket=/var/run/tailscale/tailscaled.sock status 2>&1 | head -1
     echo "== projects"; find /data/work -maxdepth 2 -name .git 2>/dev/null | sed "s#/.git##"
