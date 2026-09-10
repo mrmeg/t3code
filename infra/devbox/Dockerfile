@@ -17,17 +17,20 @@ RUN apt-get update \
   && curl -fsSL https://pkgs.tailscale.com/stable/debian/bookworm.tailscale-keyring.list \
     -o /etc/apt/sources.list.d/tailscale.list \
   && apt-get update \
-  && apt-get install -y --no-install-recommends gh tailscale \
+  && apt-get install -y --no-install-recommends gh tailscale tini \
   && rm -rf /var/lib/apt/lists/*
 
 # t3 plus the provider CLIs it can spawn; auth state for both lands under
 # $HOME (/data/home) so logins survive redeploys. bun runs the app projects,
 # eas-cli builds/submits them on EAS, and @expo/ngrok backs
 # `expo start --tunnel` without an interactive install prompt. Docker caches
-# this layer, so these versions are only a floor: entrypoint.sh reinstalls
-# all of them on every start.
+# this layer, so these versions are only the fallback for a fresh volume:
+# devbox-refresh stages current releases into /data/cli/next while the box
+# runs, and entrypoint.sh promotes them to /data/cli/current on the next boot.
+# PATH prefers that release over the baked one (harmless when it is absent).
 RUN npm i -g t3@latest @openai/codex@latest @anthropic-ai/claude-code@latest \
   bun@latest eas-cli@latest @expo/ngrok@latest
+ENV PATH=/data/cli/current/bin:$PATH
 
 # All credentials (gh, git, provider) and t3 state live under the /data
 # volume so they survive redeploys; the image itself stays disposable. bun's
@@ -37,5 +40,7 @@ ENV HOME=/data/home
 ENV BUN_INSTALL_CACHE_DIR=/data/cache/bun
 
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
+COPY devbox-refresh.sh /usr/local/bin/devbox-refresh
+RUN chmod +x /entrypoint.sh /usr/local/bin/devbox-refresh
+# tini reaps the background refresh loop and forwards SIGTERM to t3 on redeploy.
+ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint.sh"]

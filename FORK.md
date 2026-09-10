@@ -24,7 +24,7 @@ no agent in the loop. Start here; the linked docs hold the deeper detail.
 | Sync + rollout script (this runbook automates §4)            | `scripts/sync-fork.sh`, `.agents/skills/sync-fork/SKILL.md` |
 | Relay: architecture, request flow, debugging map             | `infra/relay/HOW-IT-WORKS.md`                               |
 | Relay: one-time account setup, deploy, migrations            | `infra/relay/SELFHOST.md`                                   |
-| Devbox image, provisioning, personal box, app-dev on the box | `infra/devbox/README.md`                                    |
+| Devbox image, provisioning, personal box, app-dev on the box | `infra/devbox/README.md`, `scripts/devbox.sh`               |
 | Upstream remote-access docs (pairing, Tailscale, T3 Connect) | `docs/user/remote-access.md`                                |
 | Upstream keeping-in-sync docs                                | `docs/user/updating.md`                                     |
 
@@ -156,20 +156,53 @@ adb -s <serial> install -r apps/mobile/build/T3Code-release-device-$SHA.apk
 
 ### 5.4 Devboxes
 
-Both boxes run the published `t3` npm package, not this repo.
+Both boxes run the published `t3` npm package, not this repo. `scripts/devbox.sh`
+wraps every routine operation (`--box personal` is the default, `--box client`
+for the neurospicyos box):
 
 ```sh
-# personal box
-railway ssh --project 5e74fae8-5b59-4f41-b778-f140ec224646 --environment dd05b42d-9f69-4165-ac94-40311d2e70eb --service 0b64c47f-67e1-4362-9023-99171319c376 -- npm i -g t3@latest
-# neurospicyos box
-railway ssh --project a334dbf3-e0b1-4108-b953-51dfc06f6802 --environment 972de3b3-54b5-4689-8406-5c83ce04355d --service 6da7bde1-e7bb-4f12-b4be-136d882deeec -- npm i -g t3@latest
+scripts/devbox.sh status            # Railway state, boot age, CLI versions, link
+scripts/devbox.sh up                # start a stopped box, or ship infra/devbox changes to a running one
+scripts/devbox.sh restart           # restart without rebuilding (applies a staged CLI release, not variable changes)
+scripts/devbox.sh down              # stop (volume persists; only it bills)
+scripts/devbox.sh refresh           # stage the latest CLI release now
+scripts/devbox.sh ssh [cmd]         # shell, or one command
+scripts/devbox.sh audit             # versions, auth, link, projects, processes
+scripts/devbox.sh --box client vars # variable names on the client service
+scripts/devbox.sh --box client link # one-time T3 Connect sign-in with the client on chat
 ```
 
-A `railway redeploy` also works: the entrypoint reinstalls `t3@latest` on
-every container start. Image changes ship by pushing `infra/devbox/**` on
-`mrmeg` (personal box auto-builds) or `railway up --service devbox` from
-`infra/devbox` (client box). Power: `railway down -y` stops, `railway redeploy -y`
-starts. Details and one-time setup: `infra/devbox/README.md`.
+Each client gets their **own box** in their own Railway workspace: a T3
+environment has no per-user boundary inside it, so sharing one would expose
+every project, terminal, and credential. Client boxes normally link to official
+T3 Connect (no `T3CODE_*` variables), so the client signs in at app.t3.codes
+and uses the store apps; nothing of Matt's is in their path.
+
+How the box stays current: the image bakes t3, Codex, Claude Code, bun, eas-cli
+and @expo/ngrok as a fallback, but the live set comes from `/data/cli/current`
+on the volume. `devbox-refresh` (a minute after every boot, then daily, and on
+demand via `refresh`) installs the latest releases into `/data/cli/next`; the
+next boot promotes that to `current`. So a restart is what applies updates, and
+boot never waits on the npm registry. `sync-fork` stages a refresh on both boxes
+and leaves activation to the daily restart (Matt's box) or the next `up`.
+
+`railway redeploy` only works while a deployment exists. After `down` there is
+none, so `up` re-uploads `infra/devbox` instead; when that upload matches what
+is already running Railway skips the build, and `up` falls back to `restart`.
+The two services expect different archive layouts (the personal box is
+repo-connected and wants `infra/devbox/Dockerfile`; the client box was created
+from `infra/devbox` and wants `Dockerfile` at the root); `up` stages the right
+one. Image changes ship the same way, or by pushing `infra/devbox/**` on `mrmeg`
+for the personal box (`watchPatterns` in `railway.json`).
+
+Variables are baked into a deployment, so after `railway variables --set` run
+`up` (a new deployment); `restart` reuses the old environment. Variables each
+box needs: `SHELL=/usr/bin/zsh`, `IS_SANDBOX=1` (Claude Code refuses
+full-access mode as root without it), `EXPO_TOKEN` (EAS builds and
+`expo start --tunnel`; a publish-only robot token on client boxes), and on
+Matt's box the four `T3CODE_*` relay values plus `DEVBOX_RESTART_AT_UTC=08:00`.
+Client boxes also carry `TRIFORCE_ROLE=pxa` for the governance skills. Details and one-time setup:
+`infra/devbox/README.md`.
 
 ### 5.5 Relay + hosted web app
 
