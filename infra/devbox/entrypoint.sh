@@ -4,7 +4,8 @@
 #
 #   1. Activate the CLI release that the previous boot staged (local mv, instant).
 #   2. Start tailscaled (data plane for dev servers).
-#   3. Sync personal agent config (bounded by a timeout).
+#   3. Sync personal agent config (bounded by a timeout) and mirror the
+#      credential service variables onto the volume for non-t3 shells.
 #   4. Kick off `devbox-refresh` in the background to stage the next CLI release
 #      for the next boot (repeats daily so a long-lived box always has a fresh
 #      release waiting), then exec `t3 serve`.
@@ -60,6 +61,38 @@ if [ -d "$HOME/agent-config/.git" ]; then
     || echo "warn: agent-config pull failed; using last synced copy" >&2
   [ -x "$HOME/agent-config/apply.sh" ] && "$HOME/agent-config/apply.sh"
 fi
+
+# --- 3b. Mirror service-variable credentials to the volume ---------------------
+# Railway variables reach PID 1, so t3 and the agents it spawns have them, but a
+# Tailscale SSH session starts from /etc/passwd with a clean environment and sees
+# none of them. Write the ones tools need into a 0600 file that
+# /etc/devbox-env.sh sources, so the same credential is present whichever door
+# was used. Only the names listed here are copied — the service variables stay
+# the one place to rotate a token, and nothing else leaks onto the disk. A CLI
+# that keeps its own login state under $HOME (gh, railway, supabase, stripe,
+# clerk, vercel) needs no entry here; this is for the token-only ones.
+CRED_ENV="$HOME/.config/devbox/env"
+mkdir -p "$HOME/.config/devbox"
+emit_cred() {
+  eval "value=\${$1:-}"
+  [ -n "${value:-}" ] || return 0
+  # Single-quote the value so a token with shell metacharacters survives being
+  # sourced; embedded quotes are escaped the POSIX way.
+  printf "export %s='%s'\n" "$1" "$(printf '%s' "$value" | sed "s/'/'\\\\''/g")"
+}
+(
+  umask 077
+  {
+    echo "# Written by entrypoint.sh from the Railway service variables. Do not"
+    echo "# edit: every boot overwrites it. Change the service variable instead."
+    for name in AWS_BEARER_TOKEN_BEDROCK AWS_REGION EXPO_TOKEN \
+                RAILWAY_API_TOKEN SUPABASE_ACCESS_TOKEN STRIPE_API_KEY \
+                CLERK_SECRET_KEY SENTRY_AUTH_TOKEN VERCEL_TOKEN \
+                CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+      emit_cred "$name"
+    done
+  } > "$CRED_ENV.new" && mv "$CRED_ENV.new" "$CRED_ENV"
+) || echo "warn: could not write $CRED_ENV" >&2
 
 # --- 4. Stage the next CLI release in the background, then serve ---------------
 # First refresh waits a minute so boot bandwidth goes to the tunnel and the

@@ -8,9 +8,19 @@
 # discarded at boot because .complete is only written on full success.
 set -eu
 
+# Every CLI here is an npm package on purpose: npm installs land on the volume
+# and update themselves, where an apt package would need an image rebuild. Keep
+# this list identical to the `npm i -g` in the Dockerfile, which is the fallback
+# for a fresh volume. One `npm install` for the whole set, so a registry or
+# postinstall failure leaves the previous release serving instead of promoting a
+# half-populated one — the cost is that any single package failing defers the
+# whole day's update, which /data/cli/refresh.log records.
 CLI_ROOT=/data/cli
 NEXT="$CLI_ROOT/next"
-PACKAGES="t3@latest @openai/codex@latest @anthropic-ai/claude-code@latest bun@latest eas-cli@latest @expo/ngrok@latest"
+PACKAGES="t3@latest @openai/codex@latest @anthropic-ai/claude-code@latest \
+bun@latest pnpm@latest eas-cli@latest @expo/ngrok@latest \
+@railway/cli@latest supabase@latest @stripe/cli@latest clerk@latest \
+@sentry/cli@latest wrangler@latest vercel@latest"
 
 rm -rf "$NEXT"
 mkdir -p "$NEXT"
@@ -20,7 +30,10 @@ mkdir -p "$NEXT"
 # shellcheck disable=SC2086
 npm install -g --prefix "$NEXT" --no-fund --no-audit --loglevel=error $PACKAGES
 
-for bin in t3 codex claude bun eas; do
+# Running each binary is the real check: several of these packages only fetch
+# their platform binary in a postinstall, so a present symlink is not proof.
+for bin in t3 codex claude bun pnpm eas railway supabase stripe clerk \
+           sentry-cli wrangler vercel; do
   [ -x "$NEXT/bin/$bin" ] || { echo "devbox-refresh: $bin missing after install" >&2; exit 1; }
   printf '%s %s\n' "$bin" "$("$NEXT/bin/$bin" --version 2>/dev/null | head -1)"
 done > "$NEXT/.versions"
