@@ -8,7 +8,19 @@ hand-built `devbox` project, this one is fully reproducible from this directory.
 
 First instance: `neurospicyos-devbox` (project `a334dbf3-e0b1-4108-b953-51dfc06f6802`,
 service `devbox`, workspace "alynnblanco-mom-mode-os's Projects" — client boxes live in
-the client's workspace so billing and blast radius are theirs).
+the client's workspace so billing and blast radius are theirs). One client per box:
+a T3 environment has no per-user boundary inside it, so anyone connected sees
+every project, terminal, and credential on that box.
+
+Which relay a client box talks to is a variable choice, not a build:
+
+- **Official T3 Connect (default for clients).** Leave the four `T3CODE_*`
+  variables unset. The client signs in at app.t3.codes with their own T3
+  account and uses the store mobile app and official desktop app. Nothing of
+  Matt's sits in their path.
+- **Matt's relay** (`relay.mrmeg.com` / `code.mrmeg.com`). Set the four
+  `T3CODE_*` variables below. Only the fork builds of the apps can see such
+  an environment.
 
 ## Provision a new box
 
@@ -16,15 +28,37 @@ the client's workspace so billing and blast radius are theirs).
 cd infra/devbox
 railway init --name <client>-devbox --workspace "<client workspace>"
 railway add --service devbox \
-  --variables "T3CODE_RELAY_URL=https://relay.mrmeg.com" \
-  --variables "T3CODE_CLERK_PUBLISHABLE_KEY=pk_live_Y2xlcmsuY29kZS5tcm1lZy5jb20k" \
-  --variables "T3CODE_CLERK_JWT_TEMPLATE=t3-relay" \
-  --variables "T3CODE_CLERK_CLI_OAUTH_CLIENT_ID=313pgPhRdlX9tkJh"
+  --variables "SHELL=/usr/bin/zsh" \
+  --variables "IS_SANDBOX=1" \
+  --variables "TRIFORCE_ROLE=pxa"
+# Only when the client should use Matt's relay instead of official T3 Connect:
+#   --variables "T3CODE_RELAY_URL=https://relay.mrmeg.com" \
+#   --variables "T3CODE_CLERK_PUBLISHABLE_KEY=pk_live_Y2xlcmsuY29kZS5tcm1lZy5jb20k" \
+#   --variables "T3CODE_CLERK_JWT_TEMPLATE=t3-relay" \
+#   --variables "T3CODE_CLERK_CLI_OAUTH_CLIENT_ID=313pgPhRdlX9tkJh"
 railway service devbox
 railway volume add --mount-path /data
 railway up --service devbox --detach
 railway redeploy   # first `up` may predate the volume attach; redeploy mounts it
 ```
+
+Service variables and why each exists:
+
+| Variable                  | Purpose                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `T3CODE_*` (four)         | Optional. Point the published `t3` at relay.mrmeg.com instead of official T3 Connect (Matt's box has them; client boxes normally do not). |
+| `SHELL=/usr/bin/zsh`      | T3 terminals spawn `$SHELL`. The entrypoint creates an empty `.zshrc` if missing so zsh skips its first-run wizard. |
+| `IS_SANDBOX=1`            | Claude Code refuses full-access (bypass) mode as root without it; the container runs as root.                      |
+| `EXPO_TOKEN`              | expo.dev access token so `eas build`, `eas update` and `expo start --tunnel` run non-interactively. Matt's box uses a personal token; a client box gets a token for a publish-only robot on the client's Expo account (e.g. `neurospicyos-devbox`), never Matt's. |
+| `TRIFORCE_ROLE=pxa`       | Client boxes only. Read by the client project's governance hooks and skills; unset means unrestricted (Matt).        |
+| `DEVBOX_RESTART_AT_UTC`   | Matt's box only: daily restart that also activates the staged CLI release.                                         |
+
+Set a variable later with `railway variables --set NAME=value --skip-deploys`,
+then `scripts/devbox.sh up`: variables are baked into a deployment, and
+`restart` reuses the old one.
+From the fork checkout, `scripts/devbox.sh [--box client] up|restart|down|status|refresh|link|ssh|audit|vars`
+wraps the day-to-day commands with the right project IDs and upload layout. A
+new client box means one more entry in that script's `case "$BOX"` table.
 
 `HOME` is `/data/home`, so `gh`, git, and provider credentials survive redeploys
 alongside the t3 state in `/data/t3code`.
@@ -44,11 +78,15 @@ All commands run on the box; the client's identities, never yours:
      variable or in `/data/home`.
      Same goes for GitHub: `gh auth login` uses a device code, so the client can
      run it from the T3 terminal too (step 1 can happen there as well).
-4. `t3 connect login --base-dir /data/t3code` signed in as the client's Clerk
-   user — forward the OAuth callback first:
-   `ssh -L 34338:127.0.0.1:34338 <box>` (see HOW-IT-WORKS.md).
-5. `t3 connect link --base-dir /data/t3code`, then `railway redeploy` so the
-   next serve reconciles the link and opens the tunnel.
+4. `scripts/devbox.sh --box <client> link` opens a shell on the box with the
+   two commands to run: `SSH_CONNECTION=headless t3 connect login --base-dir /data/t3code`
+   (prints a URL; the client signs in as themselves — app.t3.codes for official
+   T3 Connect, code.mrmeg.com for Matt's relay — and reads back the code, which
+   you paste), then `t3 connect link --base-dir /data/t3code`. `railway ssh`
+   sets no `SSH_*` variables, so without that prefix t3 would attempt the
+   loopback-browser flow and hang.
+5. `scripts/devbox.sh --box <client> up` so the next serve reconciles the link
+   and opens the tunnel. The client then signs in and sees the environment.
 
 ## Personal box (mrmeg)
 
@@ -60,20 +98,21 @@ to the fork repo (`mrmeg/t3code`, branch `mrmeg`, root directory
 `infra/devbox/**` rebuild it automatically (`watchPatterns` in `railway.json`).
 
 Daily refresh: `DEVBOX_RESTART_AT_UTC=08:00` on the service makes the container
-exit at 4am ET; restart policy ALWAYS boots a fresh one, which reinstalls
-`t3@latest` and resets memory to baseline. No cron service, no token.
+exit at 4am ET; restart policy ALWAYS boots a fresh one, which activates the CLI
+release staged by `devbox-refresh` and resets memory to baseline. No cron
+service, no token.
 
 Lifecycle (also available from the Railway dashboard / mobile app):
 
 ```sh
-# stop when not working (volume and its data persist; only the volume bills)
-railway down --project 5e74fae8-5b59-4f41-b778-f140ec224646 --service devbox -y
-# start again / restart now to reset memory
-railway redeploy --project 5e74fae8-5b59-4f41-b778-f140ec224646 --service devbox -y
+scripts/devbox.sh down     # stop when not working (volume and its data persist; only the volume bills)
+scripts/devbox.sh up       # start again (re-uploads infra/devbox; falls back to restart when unchanged)
+scripts/devbox.sh restart  # reset memory now and apply the staged CLI release, no rebuild (variable changes need `up`)
 ```
 
 While the box is stopped there is no container to exit, so the daily restart
-cannot revive it — `down` sticks until the next `redeploy`.
+cannot revive it, and `railway redeploy` has no deployment to repeat: `down`
+sticks until `up` re-uploads the image source.
 
 ## App dev on the personal box
 
@@ -117,11 +156,22 @@ changes. Vite gotcha: reach it by tailnet IP, or add the MagicDNS name to
 
 ## Operations
 
-- Update t3 / provider CLIs / bun / eas: nothing to do. `entrypoint.sh`
-  reinstalls all of them on every container start, so any restart or
-  `railway redeploy` lands on current releases. The Dockerfile's versions only
-  set the fallback baked into the image, and Docker caches that layer
-  indefinitely — do not rely on it.
+- Update t3 / provider CLIs / bun / eas: restart the box. The image bakes them
+  only as a fallback; the live set is `/data/cli/current` on the volume.
+  `devbox-refresh` runs a minute after every boot and then daily (or on demand:
+  `scripts/devbox.sh refresh`), installing the latest releases into
+  `/data/cli/next`, and `entrypoint.sh` promotes that to `current` on the next
+  boot. Boot therefore never waits on the npm registry, live sessions never see
+  files change under them, and `/data/cli/releases` keeps the previous release
+  for a manual rollback (`ln -sfn /data/cli/releases/<older> /data/cli/current`,
+  then restart). `/data/cli/refresh.log` holds the last refresh output.
+- `railway.json` (config as code) is deprecated by Railway in favor of
+  `.railway/railway.ts`, with existing files honored until 2026-12-01. As of
+  Sep 2026 `railway config migrate` emits a stub that drops the builder,
+  watch-pattern and restart-policy settings into comments, so the migration is
+  deferred. Before the deadline, either re-run the migration once it round-trips
+  those settings or move them into the service settings in the dashboard and
+  delete the file.
 - Logs: Railway deploy logs (serve writes to stdout). tailscaled logs to
   `/data/tailscale/tailscaled.log`, truncated each boot.
 - Known gotcha: Cloudflare Bot Fight Mode challenges Railway egress IPs —
