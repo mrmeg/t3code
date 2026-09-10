@@ -410,28 +410,24 @@ update_desktop_app || note "✖ Desktop: rebuild failed; run 'pnpm dist:desktop:
 
 update_mobile
 
-# The Railway devboxes run the published npm package (not this repo), so pull
-# their update alongside the fork sync.
-echo "→ Updating t3 on the Railway devbox..."
-if railway ssh \
-    --project 5e74fae8-5b59-4f41-b778-f140ec224646 \
-    --environment dd05b42d-9f69-4165-ac94-40311d2e70eb \
-    --service 0b64c47f-67e1-4362-9023-99171319c376 \
-    -- npm i -g t3@latest; then
-  note "✓ Devbox (mrmeg): t3 updated to latest."
+# The Railway devboxes run the published npm package (not this repo). Stage the
+# latest CLI release on each; the box activates it at its next restart (daily on
+# Matt's box, next `scripts/devbox.sh up` on the client box), so live sessions
+# are never disturbed. devbox.sh refuses when the box is stopped, which a raw
+# `railway ssh` would not: with no container it lands on Railway's account
+# endpoint and exits 0. See infra/devbox/entrypoint.sh.
+echo "→ Staging t3 + provider CLI refresh on the Railway devbox..."
+if "${REPO_ROOT}/scripts/devbox.sh" refresh; then
+  note "✓ Devbox (mrmeg): CLI release staged; activates at the daily restart."
 else
-  note "⚠ Devbox (mrmeg): update failed (stopped, offline, or railway not logged in); run 'railway ssh -- npm i -g t3@latest'."
+  note "⚠ Devbox (mrmeg): refresh skipped (stopped, offline, or railway not logged in); run 'scripts/devbox.sh refresh' once it is up."
 fi
 
-echo "→ Updating t3 on the neurospicyos devbox..."
-if railway ssh \
-    --project a334dbf3-e0b1-4108-b953-51dfc06f6802 \
-    --environment 972de3b3-54b5-4689-8406-5c83ce04355d \
-    --service 6da7bde1-e7bb-4f12-b4be-136d882deeec \
-    -- npm i -g t3@latest; then
-  note "✓ Devbox (neurospicyos): t3 updated to latest."
+echo "→ Staging t3 + provider CLI refresh on the neurospicyos devbox..."
+if "${REPO_ROOT}/scripts/devbox.sh" --box client refresh; then
+  note "✓ Devbox (neurospicyos): CLI release staged; activates at its next 'scripts/devbox.sh --box client up'."
 else
-  note "⚠ Devbox (neurospicyos): update failed; run it manually from infra/devbox (linked)."
+  note "⚠ Devbox (neurospicyos): refresh skipped (stopped, offline, or railway not logged in); run 'scripts/devbox.sh --box client refresh' once it is up."
 fi
 
 # Keep the deployed relay + hosted web app (relay.mrmeg.com / code.mrmeg.com)
