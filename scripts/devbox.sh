@@ -173,8 +173,13 @@ cmd_audit() {
     printf "%-10s %s\n" eas "$(eas whoami 2>&1 | head -1)"
     printf "%-10s %s\n" railway "$(railway whoami 2>&1 | head -1)"
     printf "%-10s %s\n" vercel "$(vercel whoami 2>&1 | tail -1)"
-    for pair in "supabase:$HOME/.supabase/access-token" "stripe:$HOME/.config/stripe/config.toml" "clerk:$HOME/.clerk/config.json"; do
-      printf "%-10s %s\n" "${pair%%:*}" "$([ -s "${pair#*:}" ] && echo "credential on volume" || echo "no credential")"
+    # Look for the credential field, not just the file: stripe and clerk both
+    # write a config holding only telemetry and UI state when a login fails, so
+    # testing existence reports success for an account that was never linked.
+    printf "%-10s %s\n" supabase "$([ -s "$HOME/.supabase/access-token" ] && echo "credential on volume" || echo "no credential")"
+    for pair in "stripe:$HOME/.config/stripe/config.toml:api_key|access_token" "clerk:$HOME/.clerk/config.json:token"; do
+      name=${pair%%:*}; rest=${pair#*:}; file=${rest%%:*}; field=${rest#*:}
+      printf "%-10s %s\n" "$name" "$(grep -qE "$field" "$file" 2>/dev/null && echo "credential on volume" || echo "no credential")"
     done
     for name in SENTRY_AUTH_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID EXPO_TOKEN AWS_BEARER_TOKEN_BEDROCK; do
       printf "%-10s %s\n" "${name%%_*}" "$(grep -q "^export $name=" "$HOME/.config/devbox/env" 2>/dev/null && echo "$name set" || echo "$name unset")"
