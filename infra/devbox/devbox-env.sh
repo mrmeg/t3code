@@ -6,10 +6,11 @@
 # Sourced, never executed: no output, no side effects, cheap enough to run per
 # shell.
 
-# The staged CLI release outranks the image-baked copies (see devbox-refresh);
-# ~/.local/bin holds tools installed by hand onto the volume (aws) and wrappers
-# (claude-bedrock).
-for _devbox_dir in /data/cli/current/bin /data/home/.local/bin; do
+# Listed lowest priority first, since each is prepended: the staged CLI release
+# ends up ahead of everything, which is the point. Stale copies of the same CLIs
+# exist under ~/.npm-global from an earlier devbox; nothing here puts that
+# directory on PATH, and nothing should.
+for _devbox_dir in /data/home/.opencode/bin /data/home/.local/bin /data/cli/current/bin; do
   case ":$PATH:" in
     *":$_devbox_dir:"*) ;;
     *) PATH="$_devbox_dir:$PATH" ;;
@@ -17,6 +18,11 @@ for _devbox_dir in /data/cli/current/bin /data/home/.local/bin; do
 done
 unset _devbox_dir
 export PATH
+
+# Propagate to non-interactive bash started from a shell that has no image ENV —
+# a Tailscale SSH session, say. Sourcing this file again is harmless: the PATH
+# guard above makes it idempotent.
+export BASH_ENV=/etc/devbox-env.sh
 
 # Credentials mirrored out of the Railway service variables by entrypoint.sh,
 # because those variables reach PID 1 but not a Tailscale SSH session.
