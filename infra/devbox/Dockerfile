@@ -41,8 +41,11 @@ RUN curl -fsSL https://astral.sh/uv/install.sh \
 # /data/cli/current on the next boot. PATH prefers that release over the baked
 # one (harmless when it is absent). Keep this list and the one in
 # devbox-refresh.sh identical, or a fresh volume ships a different tool set than
-# a refreshed one.
-RUN npm i -g t3@latest @openai/codex@latest @anthropic-ai/claude-code@latest \
+# a refreshed one. --legacy-peer-deps because these are independent CLI trees
+# where peer resolution buys nothing, and one unsatisfiable peer (an @effect
+# prerelease published ahead of its effect core, which t3's caret ranges float
+# onto) sends npm into an hours-long ERESOLVE loop instead of a failure.
+RUN npm i -g --legacy-peer-deps t3@latest @openai/codex@latest @anthropic-ai/claude-code@latest \
   bun@latest pnpm@latest eas-cli@latest @expo/ngrok@latest \
   @railway/cli@latest supabase@latest @stripe/cli@latest clerk@latest \
   @sentry/cli@latest wrangler@latest vercel@latest
