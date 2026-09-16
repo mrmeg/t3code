@@ -26,9 +26,10 @@ rm -rf "$NEXT"
 mkdir -p "$NEXT"
 
 # --prefix keeps this install out of the live tree; npm's cache under $HOME
-# (on the volume) makes repeat runs mostly a version check.
+# (on the volume) makes repeat runs mostly a version check. --legacy-peer-deps
+# for the reason given at the Dockerfile's npm step.
 # shellcheck disable=SC2086
-npm install -g --prefix "$NEXT" --no-fund --no-audit --loglevel=error $PACKAGES
+npm install -g --prefix "$NEXT" --no-fund --no-audit --loglevel=error --legacy-peer-deps $PACKAGES
 
 # Running each binary is the real check: several of these packages only fetch
 # their platform binary in a postinstall, so a present symlink is not proof.
