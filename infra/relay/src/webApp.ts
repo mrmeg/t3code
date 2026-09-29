@@ -26,7 +26,7 @@ const REPO_ROOT = NodePath.resolve(
  */
 export const WebApp = Effect.gen(function* () {
   const { stage } = yield* RelayDeploymentConfig;
-  const webAppDomain = yield* Config.string("WEB_APP_DOMAIN").pipe(
+  const webAppDomain = yield* Config.String("WEB_APP_DOMAIN").pipe(
     Config.option,
     Config.map(
       Option.flatMap((value) => {
