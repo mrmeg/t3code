@@ -45,7 +45,7 @@ export const RelaySchema = Drizzle.Schema("RelaySchema", {
 // not by the deploy.
 export const RelayHyperdrive = Effect.gen(function* () {
   yield* RelaySchema;
-  const databaseUrl = yield* Config.nonEmptyString("RELAY_DATABASE_URL");
+  const databaseUrl = yield* Config.NonEmptyString("RELAY_DATABASE_URL");
   const url = new URL(databaseUrl);
   return yield* Cloudflare.Hyperdrive.Connection("RelayHyperdrive", {
     origin: {
