@@ -32,9 +32,11 @@ with a `═══ sync-fork summary` block. What it rolls out:
   published `t3` npm package. `railway ssh -- devbox-refresh` stages the latest
   t3 + provider CLI release on each; it activates at the box's next restart
   (daily on Matt's box, `scripts/devbox.sh --box client up` on the client box).
-- **Relay** — `vp run --filter t3code-relay deploy --stage prod --yes` so
+- **Relay** — `pnpm migrate:railway` in `infra/relay`, then
+  `vp run --filter t3code-relay deploy --stage prod --yes` so
   relay.mrmeg.com and code.mrmeg.com serve the rebased branch (web build is
-  memoized; cheap when nothing web-facing changed).
+  memoized; cheap when nothing web-facing changed). A failed migration skips
+  the deploy.
 
 State (last built commit, last installed commit per device) lives in
 `.t3/sync-fork.state`, gitignored. Delete a `device_<id>=` line to force a

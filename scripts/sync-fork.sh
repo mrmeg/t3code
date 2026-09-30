@@ -432,12 +432,20 @@ fi
 
 # Keep the deployed relay + hosted web app (relay.mrmeg.com / code.mrmeg.com)
 # in step with the rebased branch. Alchemy memoizes the web build, so this is
-# cheap when nothing web-facing changed.
-echo "→ Deploying relay + hosted web app..."
-if vp run --filter t3code-relay deploy --stage prod --yes; then
-  note "✓ Relay: deployed (relay.mrmeg.com, code.mrmeg.com)."
+# cheap when nothing web-facing changed. Migrations run first because deploy
+# does not apply them, and new relay code queries columns they add; a failed
+# migration skips the deploy so the code cannot get ahead of the schema.
+echo "→ Migrating relay database..."
+if (cd "${REPO_ROOT}/infra/relay" && pnpm migrate:railway); then
+  note "✓ Relay: database migrations current."
+  echo "→ Deploying relay + hosted web app..."
+  if vp run --filter t3code-relay deploy --stage prod --yes; then
+    note "✓ Relay: deployed (relay.mrmeg.com, code.mrmeg.com)."
+  else
+    note "⚠ Relay: deploy failed; run 'vp run --filter t3code-relay deploy --stage prod --yes'."
+  fi
 else
-  note "⚠ Relay: deploy failed; run 'vp run --filter t3code-relay deploy --stage prod --yes'."
+  note "✖ Relay: migration failed, deploy skipped; run 'cd infra/relay && pnpm migrate:railway', then the deploy."
 fi
 
 echo

@@ -206,15 +206,13 @@ Client boxes also carry `TRIFORCE_ROLE=pxa` for the governance skills. Details a
 
 ### 5.5 Relay + hosted web app
 
+Migrate first, then deploy. Deploy does not apply `infra/relay/migrations`,
+and new relay code that queries a missing column fails every tunnel
+registration with `upstream_unavailable`:
+
 ```sh
+(cd infra/relay && pnpm migrate:railway)   # no-op when current
 vp run --filter t3code-relay deploy --stage prod --yes
-```
-
-After upstream changes to `infra/relay/migrations`, apply them by hand
-(migrations do not run on deploy):
-
-```sh
-cd infra/relay && pnpm migrate:railway
 ```
 
 Diverged-from-upstream files to re-check after a rebase: `infra/relay/src/db.ts`,
