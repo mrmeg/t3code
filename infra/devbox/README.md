@@ -46,7 +46,7 @@ Service variables and why each exists:
 
 | Variable                | Purpose                                                                                                                                                                                                                                                           |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `T3CODE_*` (four)       | Optional. Point the published `t3` at relay.mrmeg.com instead of official T3 Connect (Matt's box has them; client boxes normally do not).                                                                                                                         |
+| `T3CODE_*` (four)       | Optional. Point the published `t3` at relay.mrmeg.com instead of official T3 Connect (neither box uses them now; set them to move a box back to Matt's relay).                                                                                                    |
 | `SHELL=/usr/bin/zsh`    | T3 terminals spawn `$SHELL`. The entrypoint creates an empty `.zshrc` if missing so zsh skips its first-run wizard.                                                                                                                                               |
 | `IS_SANDBOX=1`          | Claude Code refuses full-access (bypass) mode as root without it; the container runs as root.                                                                                                                                                                     |
 | `EXPO_TOKEN`            | expo.dev access token so `eas build`, `eas update` and `expo start --tunnel` run non-interactively. Matt's box uses a personal token; a client box gets a token for a publish-only robot on the client's Expo account (e.g. `neurospicyos-devbox`), never Matt's. |
@@ -54,8 +54,9 @@ Service variables and why each exists:
 | `DEVBOX_RESTART_AT_UTC` | Matt's box only: daily restart that also activates the staged CLI release.                                                                                                                                                                                        |
 
 Set a variable later with `railway variables --set NAME=value --skip-deploys`,
-then `scripts/devbox.sh up`: variables are baked into a deployment, and
-`restart` reuses the old one.
+then `railway redeploy -y` with the box's `--project/--environment/--service`:
+variables are baked into a deployment, `restart` reuses the old one, and `up`
+falls back to `restart` when `infra/devbox` is unchanged.
 From the fork checkout, `scripts/devbox.sh [--box client] up|restart|down|status|refresh|link|ssh|audit|vars`
 wraps the day-to-day commands with the right project IDs and upload layout. A
 new client box means one more entry in that script's `case "$BOX"` table.
