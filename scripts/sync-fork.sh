@@ -6,6 +6,7 @@
 #
 # Safe to run any time from anywhere in the repo, unattended:
 #   ./scripts/sync-fork.sh
+#   ./scripts/sync-fork.sh --git-only   # Keep the fork current without deploying it.
 #
 # Only the git steps are fatal. Every rollout step records its outcome and the
 # script ends with a summary so a single glance shows what landed, what was
@@ -16,6 +17,20 @@
 #   SYNC_FORK_ANDROID_SERIALS="<serial> ..."       # adb devices -l (substring match)
 # Unset means: the primary iPhone for iOS, every attached adb device for Android.
 set -euo pipefail
+
+GIT_ONLY=false
+case "${1:-}" in
+  --git-only) GIT_ONLY=true; shift ;;
+  --help|-h)
+    echo "Usage: $0 [--git-only]"
+    echo "--git-only syncs and pushes the fork without building, installing, or deploying."
+    exit 0
+    ;;
+esac
+if [[ $# -ne 0 ]]; then
+  echo "Unknown argument: $1" >&2
+  exit 1
+fi
 
 WORK_BRANCH="mrmeg"
 APP_NAME="T3 Code (Alpha)"
@@ -407,6 +422,11 @@ fi
 # ---------------------------------------------------------------------------
 # Rollout (each step non-fatal; outcomes collected in the summary)
 # ---------------------------------------------------------------------------
+if [[ "$GIT_ONLY" == true ]]; then
+  printf '%s\n' "${SUMMARY[@]}"
+  exit 0
+fi
+
 # Everything below runs even when the branch was already up to date: a previous
 # sync may have stopped on a conflict before reaching it, and the devboxes and
 # relay drift on their own schedule regardless of what upstream did.
