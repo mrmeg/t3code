@@ -187,6 +187,11 @@ describe("CloudManagedEndpointRuntime", () => {
     ).toBe(true);
     expect(
       ManagedEndpointRuntime.isRejectedRelayClientTunnelOutput(
+        '2026-10-05T03:01:48Z ERR Register tunnel error from server side error="Unauthorized: Tunnel not found" connIndex=0 event=0 ip=2606:4700:a8::5',
+      ),
+    ).toBe(true);
+    expect(
+      ManagedEndpointRuntime.isRejectedRelayClientTunnelOutput(
         '2026-06-17T02:00:00Z ERR Register tunnel error from server side error="connection timed out" connIndex=0',
       ),
     ).toBe(false);

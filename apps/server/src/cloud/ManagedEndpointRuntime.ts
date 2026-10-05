@@ -82,14 +82,15 @@ export function classifyRelayClientOutput(line: string): "connected" | "warning"
 
 /**
  * Cloudflare's edge rejects a connector whose tunnel was deleted or whose
- * token no longer matches. Current edge output is
- * `error="Failed to get tunnel"` with no prefix; older edges prefixed the
- * same messages with `Unauthorized:`. Match both so recovery fires on either.
+ * token no longer matches. Edges have reported a deleted tunnel as
+ * `error="Failed to get tunnel"`, `Unauthorized: Record for tunnel not found`,
+ * and `Unauthorized: Tunnel not found`. Match all of them so recovery fires on
+ * whichever the edge sends.
  */
 export function isRejectedRelayClientTunnelOutput(line: string): boolean {
   return (
     /\bRegister tunnel error from server side\b/iu.test(line) &&
-    /error="(?:Unauthorized:\s*)?(?:Failed to get tunnel|Record for tunnel not found|Invalid tunnel secret)"/iu.test(
+    /error="(?:Unauthorized:\s*)?(?:Failed to get tunnel|(?:Record for )?tunnel not found|Invalid tunnel secret)"/iu.test(
       line,
     )
   );
