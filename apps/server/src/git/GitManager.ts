@@ -190,7 +190,7 @@ interface OpenPrInfo {
 }
 
 interface PullRequestInfo extends OpenPrInfo, PullRequestHeadRemoteInfo {
-  headSha?: string;
+  headSha?: string | undefined;
   state: "open" | "closed" | "merged";
   isDraft?: boolean;
   closedAt?: string | null;
