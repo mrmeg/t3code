@@ -27,6 +27,11 @@ REPO_ROOT="$PWD"
 STATE_FILE="${REPO_ROOT}/.t3/sync-fork.state"
 MOBILE_DIR="${REPO_ROOT}/apps/mobile"
 MOBILE_BUILD_DIR="${MOBILE_DIR}/build"
+# Runs launched from T3 Code inherit the app's environment, not ~/.zshrc, so
+# Gradle would not find the SDK.
+if [[ -z "${ANDROID_HOME:-}" && -d "$HOME/Library/Android/sdk" ]]; then
+  export ANDROID_HOME="$HOME/Library/Android/sdk"
+fi
 # Paths whose changes require a rebuild of each artifact.
 DESKTOP_PATHS=(apps/desktop apps/web apps/server packages pnpm-lock.yaml)
 MOBILE_PATHS=(apps/mobile packages pnpm-lock.yaml)
