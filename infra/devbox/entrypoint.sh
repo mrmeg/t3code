@@ -53,13 +53,29 @@ fi
 # on a fresh (client) box; an empty file is enough to suppress it.
 [ -e "$HOME/.zshrc" ] || : > "$HOME/.zshrc"
 
-# Personal agent config (skills, agents, output styles, CLAUDE.md) is a repo
-# cloned once to $HOME/agent-config; every boot pulls it and reruns its apply
-# script. Bounded so a hung remote cannot delay serve. No repo means nothing to sync.
-if [ -d "$HOME/agent-config/.git" ]; then
-  timeout 60 git -C "$HOME/agent-config" pull --ff-only \
-    || echo "warn: agent-config pull failed; using last synced copy" >&2
-  [ -x "$HOME/agent-config/apply.sh" ] && "$HOME/agent-config/apply.sh"
+# Personal agent config (skills, commands, agents, output styles, CLAUDE.md) is
+# the mrmeg/agent-framework checkout at $HOME/.agent-framework. Its bootstrap
+# fast-forwards the checkout and relinks everything into $HOME/.claude, so a
+# push from the laptop reaches the box by the next boot. Bounded so a hung
+# remote cannot delay serve. First boot clones it when gh is logged in;
+# otherwise run the README step by hand.
+#
+# One-time migration: the retired mrmeg/agent-config mirror copied plain
+# directories into $HOME/.claude, which the framework installer refuses to
+# overwrite. Remove the clone and the copies it made before the first sync.
+if [ -d "$HOME/agent-config/.git" ] \
+   && git -C "$HOME/agent-config" remote get-url origin 2>/dev/null | grep -q 'mrmeg/agent-config'; then
+  rm -rf "$HOME/agent-config" "$HOME/.claude/skills" "$HOME/.claude/agents" \
+    "$HOME/.claude/commands" "$HOME/.claude/output-styles" "$HOME/.claude/CLAUDE.md"
+fi
+AGENT_FRAMEWORK="$HOME/.agent-framework"
+if [ ! -d "$AGENT_FRAMEWORK/.git" ] && gh auth status >/dev/null 2>&1; then
+  timeout 120 gh repo clone mrmeg/agent-framework "$AGENT_FRAMEWORK" -- --quiet \
+    || echo "warn: agent-framework clone failed; see infra/devbox/README.md" >&2
+fi
+if [ -x "$AGENT_FRAMEWORK/bootstrap.sh" ]; then
+  timeout 120 "$AGENT_FRAMEWORK/bootstrap.sh" --sync \
+    || echo "warn: agent-framework sync failed; using last installed copy" >&2
 fi
 
 # --- 3b. Mirror service-variable credentials to the volume ---------------------

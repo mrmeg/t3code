@@ -129,10 +129,11 @@ The personal box doubles as a cloud dev environment for Matt's own apps
   that lives in EAS-managed credentials; build-time secrets live in `eas env`.
   `EXPO_TOKEN` (an expo.dev personal access token) as a service variable keeps
   `eas` commands non-interactive.
-- **Agent config**: `$HOME/agent-config` is a clone of the private
-  `mrmeg/agent-config` repo; the entrypoint pulls it and runs its `apply.sh`
-  on every start, so skills edited on the laptop reach the box by the next
-  restart (push from the laptop with the repo's `sync-from-laptop.sh`).
+- **Agent config**: `$HOME/.agent-framework` is a clone of
+  `mrmeg/agent-framework`; the entrypoint runs its `bootstrap.sh --sync` on
+  every start (fast-forward, then relink into `~/.claude`), so a skill or
+  guidance commit pushed from the laptop reaches the box by the next restart.
+  Log: `~/.claude/agent-framework-sync.log`.
 - **Editor**: Zed (or VS Code Remote-SSH) over Tailscale SSH, so the box holds
   the only checkout and nothing needs syncing with the laptop. The laptop's
   `~/.ssh/config` aliases `railway-devbox` to the box's MagicDNS name
@@ -147,7 +148,7 @@ One-time setup after the image lands:
 1. `tailscale up --ssh --hostname devbox` over `railway ssh` (the printed
    auth URL enrolls the box; state persists on `/data/tailscale`).
 2. `railway variables --set "EXPO_TOKEN=<token from expo.dev/settings/access-tokens>"`.
-3. `gh repo clone mrmeg/agent-config "$HOME/agent-config"` on the box.
+3. `gh repo clone mrmeg/agent-framework "$HOME/.agent-framework" && "$HOME/.agent-framework/bootstrap.sh"` on the box (the entrypoint does this itself once `gh` is logged in).
 
 ## Toolchain
 
